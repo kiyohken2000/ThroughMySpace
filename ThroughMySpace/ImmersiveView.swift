@@ -248,8 +248,14 @@ struct ImmersiveView: View {
         let height = texture.height
 
         // テクスチャのピクセルデータを受け取るための MTLTexture を作成
+        //
+        // 【重要】rgba8Unorm_srgb を使う理由：
+        // 空間写真は sRGB 画像。TextureResource.copy(to:) でコピーするとき、
+        // rgba8Unorm（リニア）にすると GPU がガンマを除去したリニア値を書き込む。
+        // そのデータを CGContext（DeviceRGB = sRGB）に渡すと「暗い画像」になる。
+        // rgba8Unorm_srgb にすることで sRGB エンコード済みの値がそのまま保持される。
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm,
+            pixelFormat: .rgba8Unorm_srgb,
             width: width,
             height: height,
             mipmapped: false
@@ -290,7 +296,9 @@ struct ImmersiveView: View {
             bitsPerComponent: 8,
             bytesPerRow: bytesPerRow,
             space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            // MTLTexture からコピーしたデータは非プリマルチプライ（straight alpha）
+            // premultipliedLast にするとアルファが1.0未満のとき RGB が暗くなる
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
         ) else {
             print("⚠️ CGContext 作成失敗")
             return nil
@@ -310,11 +318,19 @@ struct ImmersiveView: View {
     // 【実装】
     // CIVignetteEffect を使う。CIVignette より細かく制御できる。
     //   center: 暗くならない中心点（画像の中心 = 正面）
-    //   radius: 明るい中心の半径（小さいほど視野が狭い）
-    //   intensity: 暗さ（1.0 = 完全に黒）
+    //   radius: 明るい中心の半径（大きいほど視野が広い）
+    //   intensity: 暗さ（大きいほど周辺が暗い）
     //   falloff: 境界のなだらかさ（大きいほどぼんやり）
+    //
+    // 【intensity=0.0 の設計】
+    //   radius を画像全体より大きくし、intensity も低くすることで
+    //   ほぼ元画像と変わらない見た目にする
     // ------------------------------------------------------------------
     private func applyVignetteFilter(to image: CIImage, intensity: Float) -> CIImage {
+        // intensity が非常に小さい場合はフィルターをかけない（元画像そのまま）
+        // CIVignetteEffect は intensity=0 でも完全にゼロにはならないため
+        guard intensity > 0.01 else { return image }
+
         let width  = image.extent.width
         let height = image.extent.height
 
@@ -322,18 +338,17 @@ struct ImmersiveView: View {
         let center = CGPoint(x: width / 2, y: height / 2)
 
         // 「明るい中心の半径」を intensity に応じて変える
-        // intensity=0.0（軽度）: 画像の 45% が明るいゾーン
-        // intensity=1.0（重度）: 画像の 10% が明るいゾーン
-        // 画像の短辺の半分を基準にする（長方形でも均等に見える）
-        let baseRadius = Float(min(width, height)) / 2.0
-        let radius = baseRadius * mix(0.45, 0.10, t: intensity)
+        // intensity=0.0（最小）: 短辺の 80%（周辺がわずかに暗くなる程度）
+        // intensity=1.0（最大）: 短辺の 8%（重度の視野狭窄）
+        let baseRadius = Float(min(width, height))
+        let radius = baseRadius * mix(0.8, 0.08, t: intensity)
 
         let filter = CIFilter.vignetteEffect()
         filter.inputImage  = image
         filter.center      = center
         filter.radius      = radius
-        filter.intensity   = 1.5  // 固定：十分暗くする
-        filter.falloff     = mix(0.5, 0.15, t: intensity)  // 重いほど境界がシャープ
+        filter.intensity   = mix(0.8, 2.0, t: intensity)
+        filter.falloff     = mix(0.8, 0.1, t: intensity)  // 重いほど境界がシャープ
 
         return filter.outputImage ?? image
     }
