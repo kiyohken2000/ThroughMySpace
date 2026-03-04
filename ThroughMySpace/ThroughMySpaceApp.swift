@@ -13,7 +13,8 @@ struct ThroughMySpaceApp: App {
     @State private var appModel = AppModel()
 
     var body: some Scene {
-        WindowGroup {
+        // id を指定することで dismissWindow(id:) で閉じられるようになる
+        WindowGroup(id: appModel.mainWindowID) {
             ContentView()
                 .environment(appModel)
         }
