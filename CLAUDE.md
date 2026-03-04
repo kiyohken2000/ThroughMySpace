@@ -139,8 +139,8 @@ ThroughMySpace/
 | 色覚異常 | ✅ 実装済み | Brettel 1997 行列変換（3タイプ） |
 | 白内障 | ✅ 実装済み | CIGaussianBlur + Bloom + 黄変 |
 | 網膜色素変性症 | ✅ 実装済み | CIRadialGradient + CIBlendWithMask |
-| 老眼 | 🔜 追加予定 | CIGaussianBlur（中心部） |
-| 乱視 | 🔜 追加予定 | CIMotionBlur（方向指定） |
+| 老眼 | ✅ 実装済み | CIGaussianBlur + コントラスト調整 |
+| 乱視 | ✅ 実装済み | CIMotionBlur（30度）+ 輝度マスク |
 | 中心暗点 | 🔜 追加予定 | アイトラッキング連動 |
 | 飛蚊症 | 🔜 追加予定 | アイトラッキング連動 |
 
