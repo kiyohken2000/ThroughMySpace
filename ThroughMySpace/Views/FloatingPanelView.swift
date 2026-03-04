@@ -204,10 +204,11 @@ private struct ConditionButton: View {
                     .font(.title)
                     .frame(height: 36)
 
-                // ラベル
+                // ラベル（長い病名は2行に折り返す）
                 Text(conditionType.title)
-                    .font(.body)
-                    .lineLimit(1)
+                    .font(.caption)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)

@@ -267,12 +267,10 @@ struct ImmersiveView: View {
             filteredCI = applyRetinitisFilter(to: ciImage, intensity: setting.intensity.value)
 
         case .presbyopia:
-            // TODO: フェーズ2で実装予定（CIGaussianBlur を中心部に適用）
-            filteredCI = ciImage
+            filteredCI = applyPresbyopiaFilter(to: ciImage, intensity: setting.intensity.value)
 
         case .astigmatism:
-            // TODO: フェーズ2で実装予定（CIMotionBlur を特定角度で適用）
-            filteredCI = ciImage
+            filteredCI = applyAstigmatismFilter(to: ciImage, intensity: setting.intensity.value)
         }
 
         // キャンセルチェック（重い処理の後）
@@ -688,6 +686,110 @@ struct ImmersiveView: View {
         blendFilter.setValue(mask,              forKey: kCIInputMaskImageKey)
 
         return blendFilter.outputImage ?? contrastedImage
+    }
+
+    // ------------------------------------------------------------------
+    // 老眼フィルター（近距離のぼかし）
+    //
+    // 【老眼の視覚的特徴】
+    // ・水晶体の弾力が失われ、近距離にピントが合わなくなる
+    // ・遠くはほぼ正常に見えるが、手元がぼやける
+    // ・全体的なぼかしではなく、「ピントが合っていない」質感
+    //
+    // 【実装】
+    // 1. CIGaussianBlur: 全体をぼかす
+    // 2. CIVibrance/CIColorControls: コントラストをやや落とす（目の疲れ感）
+    // ※ 本来は近距離だけがぼける。空間写真全体に適用するのは近似的表現。
+    // ------------------------------------------------------------------
+    private func applyPresbyopiaFilter(to image: CIImage, intensity: Float) -> CIImage {
+        guard intensity > 0.01 else { return image }
+
+        let width  = image.extent.width
+        let height = image.extent.height
+
+        // Step 1: ガウスぼかし
+        // radius: intensity=1.0 で短辺の 2.0%（老眼らしいふんわりぼかし）
+        // 白内障より少し小さめのぼかし（ハレーション効果なし）
+        let blurRadius = Float(min(width, height)) * mix(0.0, 0.02, t: intensity)
+        let blurFilter = CIFilter.gaussianBlur()
+        blurFilter.inputImage = image
+        blurFilter.radius     = blurRadius
+        guard let blurredImage = blurFilter.outputImage else { return image }
+
+        // ぼかしで広がったはみ出し部分を元のサイズにクロップ
+        let clampedBlur = blurredImage.cropped(to: image.extent)
+
+        // Step 2: コントラストをやや落とす（長時間ピントを合わせようとする疲れ感）
+        // 白内障の霞みより軽め。「ぼやけている」だけでなく「疲れ目」感を加える
+        let controlsFilter = CIFilter.colorControls()
+        controlsFilter.inputImage  = clampedBlur
+        controlsFilter.contrast    = mix(1.0, 0.88, t: intensity)
+        controlsFilter.brightness  = mix(0.0, 0.02, t: intensity)  // わずかに明るく（眩しさ）
+        controlsFilter.saturation  = mix(1.0, 0.92, t: intensity)  // ごくわずかに彩度低下
+
+        return controlsFilter.outputImage ?? clampedBlur
+    }
+
+    // ------------------------------------------------------------------
+    // 乱視フィルター（方向性のあるブレ）
+    //
+    // 【乱視の視覚的特徴】
+    // ・角膜・水晶体のゆがみにより、光が一点に集まらない
+    // ・特定方向に像が二重に（または引き伸ばされて）見える
+    // ・夜間や光源周辺で特に顕著（光がにじむ）
+    // ・水平方向の乱視が最も一般的（斜めも存在）
+    //
+    // 【白内障との違い】
+    // 白内障：全方向に均等なぼかし（光が散乱）
+    // 乱視：  特定方向へのブレ（光が伸びる）
+    //
+    // 【実装】
+    // CIMotionBlur: 指定した角度方向にモーションブラーをかける
+    // angle: π/6 ≈ 30度（斜め方向の乱視を表現）
+    // ------------------------------------------------------------------
+    private func applyAstigmatismFilter(to image: CIImage, intensity: Float) -> CIImage {
+        guard intensity > 0.01 else { return image }
+
+        let width  = image.extent.width
+        let height = image.extent.height
+
+        // Step 1: モーションブラー（方向性のあるブレ）
+        // radius: intensity=1.0 で短辺の 1.5%（視野全体に方向性のあるブレ）
+        // angle: π/6（30度斜め）= 最も一般的な水平・斜め方向の乱視に近い角度
+        let blurRadius = Float(min(width, height)) * mix(0.0, 0.015, t: intensity)
+        let motionFilter = CIFilter(name: "CIMotionBlur")!
+        motionFilter.setValue(image, forKey: kCIInputImageKey)
+        motionFilter.setValue(blurRadius, forKey: kCIInputRadiusKey)
+        motionFilter.setValue(Float.pi / 6.0, forKey: kCIInputAngleKey)  // 30度
+        guard let motionBlurred = motionFilter.outputImage else { return image }
+
+        // ブラーによるはみ出し部分を元のサイズにクロップ
+        let clampedMotion = motionBlurred.cropped(to: image.extent)
+
+        // Step 2: ハロー感の強調（光源が伸びる乱視の特徴）
+        // 元画像の明るい部分だけをモーションブラー後の画像に少し重ねる
+        // → 光源周辺だけが特定方向に「にじむ」効果
+        let luminanceMask = image
+            .applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 0.0,  // グレースケール化
+                kCIInputContrastKey: 2.5,    // コントラスト強調（明部だけを抽出）
+                kCIInputBrightnessKey: -0.2  // 暗部をさらに暗くし明部だけ残す
+            ])
+
+        // 明るい部分（光源）のみモーションブラー版を重ねる
+        let bloomBlend = CIFilter(name: "CIBlendWithMask")!
+        bloomBlend.setValue(clampedMotion,  forKey: kCIInputBackgroundImageKey)
+        bloomBlend.setValue(clampedMotion,  forKey: kCIInputImageKey)
+        bloomBlend.setValue(luminanceMask,  forKey: kCIInputMaskImageKey)
+
+        // Step 3: コントラスト微調整（ピントが合っていない疲れ感）
+        let controlsFilter = CIFilter.colorControls()
+        controlsFilter.inputImage  = bloomBlend.outputImage ?? clampedMotion
+        controlsFilter.contrast    = mix(1.0, 0.90, t: intensity)
+        controlsFilter.brightness  = 0
+        controlsFilter.saturation  = mix(1.0, 0.95, t: intensity)
+
+        return controlsFilter.outputImage ?? clampedMotion
     }
 
     // ------------------------------------------------------------------

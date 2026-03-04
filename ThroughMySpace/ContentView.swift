@@ -287,8 +287,8 @@ struct PhotoTipsView: View {
         ("paintpalette",               .purple, "condition.colorBlind.title",    "tip.colorBlind.text",    false),
         ("sun.max",                    .yellow, "condition.cataract.title",      "tip.cataract.text",      false),
         ("circle.dotted",              .gray,   "condition.rp.title",            "tip.rp.text",            false),
-        ("eyeglasses",                 .green,  "condition.presbyopia.title",    "tip.presbyopia.text",    true),
-        ("lines.measurement.horizontal", .cyan, "condition.astigmatism.title",   "tip.astigmatism.text",   true),
+        ("eyeglasses",                 .green,  "condition.presbyopia.title",    "tip.presbyopia.text",    false),
+        ("lines.measurement.horizontal", .cyan, "condition.astigmatism.title",   "tip.astigmatism.text",   false),
         ("scope",                      .red,    "tip.scotoma.label",             "tip.scotoma.text",       true),
         ("bubble.left",                .teal,   "tip.floaters.label",            "tip.floaters.text",      true),
     ]
