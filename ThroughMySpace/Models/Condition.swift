@@ -77,7 +77,7 @@ struct ConditionIntensity: Equatable {
 // 現在選択中の症状設定
 struct ConditionSetting: Equatable {
     var type: ConditionType = .none
-    var intensity: ConditionIntensity = ConditionIntensity(0.5)
+    var intensity: ConditionIntensity = ConditionIntensity(0.0)  // 症状選択直後は変化なしから開始
 
     // 色覚異常のサブタイプ
     var colorBlindType: ColorBlindType = .deuteranopia

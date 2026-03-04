@@ -354,14 +354,18 @@ struct ImmersiveView: View {
     }
 
     // ------------------------------------------------------------------
-    // 色覚異常フィルター（CIColorMatrix による変換）
+    // 色覚異常フィルター（CIColorMatrix + 彩度調整）
     //
     // 【RGB変換行列について】
     // CIColorMatrix は [R, G, B, A] → [R', G', B', A'] の線形変換。
     // rVector = 出力 R' を計算するときの [入力R, G, B, A] の係数。
     //
-    // intensity=0.0 → 単位行列（変換なし）
+    // intensity=0.0 → 変換なし（元画像のまま）
     // intensity=1.0 → 完全変換
+    //
+    // 【2段階のフィルター】
+    // 1. CIColorMatrix: 色チャンネルを混合して色混同を再現
+    // 2. CIColorControls: 彩度を下げる（色覚異常では色の鮮やかさも低下する）
     // ------------------------------------------------------------------
     private func applyColorBlindFilter(
         to image: CIImage,
@@ -369,34 +373,49 @@ struct ImmersiveView: View {
         intensity: Float
     ) -> CIImage {
 
+        // intensity が非常に小さい場合はフィルターをかけない
+        guard intensity > 0.01 else { return image }
+
         // 各タイプの完全変換行列（intensity=1.0 時に適用される値）
+        //
+        // 【行列の読み方】
+        // rVec = (a, b, c, 0) は「出力R = 入力R*a + 入力G*b + 入力B*c」
+        //
+        // deuteranopia（緑弱）: 緑チャンネルが欠損→赤と緑が同じ黄色っぽい色に見える
+        // protanopia（赤弱）:   赤チャンネルが欠損→赤が暗い黄緑〜灰色に見える
+        // tritanopia（青弱）:   青チャンネルが欠損→青が緑に、黄色が赤に見える
         let (rVec, gVec, bVec): (CIVector, CIVector, CIVector)
 
         switch type {
         case .deuteranopia:
-            // 2型色覚（緑弱）: M錐体（緑感受性）が欠損
-            // 赤と緑を区別しにくい。「赤と緑が似た色に見える」
+            // 2型色覚（緑弱）
+            // 緑の情報が失われ、赤と緑が区別できなくなる
+            // 特徴：緑→黄色っぽく、赤→茶色っぽく見える
             rVec = CIVector(x: 0.625, y: 0.375, z: 0.0, w: 0.0)
             gVec = CIVector(x: 0.700, y: 0.300, z: 0.0, w: 0.0)
             bVec = CIVector(x: 0.000, y: 0.300, z: 0.700, w: 0.0)
 
         case .protanopia:
-            // 1型色覚（赤弱）: L錐体（赤感受性）が欠損
-            // 赤が暗く見え、赤緑を区別しにくい
+            // 1型色覚（赤弱）
+            // 赤の情報が失われ、赤が暗く見える
+            // 特徴：赤→暗い緑〜灰色、緑→黄色っぽく見える
             rVec = CIVector(x: 0.567, y: 0.433, z: 0.0, w: 0.0)
             gVec = CIVector(x: 0.558, y: 0.442, z: 0.0, w: 0.0)
             bVec = CIVector(x: 0.000, y: 0.242, z: 0.758, w: 0.0)
 
         case .tritanopia:
-            // 3型色覚（青弱）: S錐体（青感受性）が欠損
-            // 青と緑、黄と赤の区別が難しい（日本人には稀）
+            // 3型色覚（青弱）
+            // 青の情報が失われ、青と緑・黄と赤が区別しにくくなる
+            // 特徴：青→緑っぽく、黄色→ピンクっぽく見える
             rVec = CIVector(x: 0.950, y: 0.050, z: 0.0, w: 0.0)
             gVec = CIVector(x: 0.000, y: 0.433, z: 0.567, w: 0.0)
             bVec = CIVector(x: 0.000, y: 0.475, z: 0.525, w: 0.0)
         }
 
         // intensity で単位行列と変換行列を補間
-        let t = CGFloat(intensity)
+        // 変化を分かりやすくするため二乗カーブ（低強度でも効果が出やすい）
+        let tLinear = CGFloat(intensity)
+        let t = tLinear * tLinear  // 二乗カーブ：低強度でも色変化が見えやすくなる
         func lerp(_ identity: CIVector, _ target: CIVector) -> CIVector {
             CIVector(
                 x: identity.x * (1 - t) + target.x * t,
@@ -406,15 +425,28 @@ struct ImmersiveView: View {
             )
         }
 
-        let filter = CIFilter.colorMatrix()
-        filter.inputImage  = image
-        filter.rVector     = lerp(CIVector(x: 1, y: 0, z: 0, w: 0), rVec)
-        filter.gVector     = lerp(CIVector(x: 0, y: 1, z: 0, w: 0), gVec)
-        filter.bVector     = lerp(CIVector(x: 0, y: 0, z: 1, w: 0), bVec)
-        filter.aVector     = CIVector(x: 0, y: 0, z: 0, w: 1)
-        filter.biasVector  = CIVector(x: 0, y: 0, z: 0, w: 0)
+        // Step 1: 色チャンネル混合（色混同の再現）
+        let matrixFilter = CIFilter.colorMatrix()
+        matrixFilter.inputImage = image
+        matrixFilter.rVector    = lerp(CIVector(x: 1, y: 0, z: 0, w: 0), rVec)
+        matrixFilter.gVector    = lerp(CIVector(x: 0, y: 1, z: 0, w: 0), gVec)
+        matrixFilter.bVector    = lerp(CIVector(x: 0, y: 0, z: 1, w: 0), bVec)
+        matrixFilter.aVector    = CIVector(x: 0, y: 0, z: 0, w: 1)
+        matrixFilter.biasVector = CIVector(x: 0, y: 0, z: 0, w: 0)
 
-        return filter.outputImage ?? image
+        guard let matrixOutput = matrixFilter.outputImage else { return image }
+
+        // Step 2: 彩度を下げる（色覚異常では色の鮮やかさも低下する）
+        // saturation: 1.0 = 変化なし、0.0 = 完全グレースケール
+        // intensity=1.0 で彩度 0.55 まで下げる（完全グレーにはしない）
+        let saturation = mix(1.0, 0.55, t: intensity)
+        let controlsFilter = CIFilter.colorControls()
+        controlsFilter.inputImage  = matrixOutput
+        controlsFilter.saturation  = saturation
+        controlsFilter.brightness  = 0
+        controlsFilter.contrast    = 1
+
+        return controlsFilter.outputImage ?? matrixOutput
     }
 
     // ------------------------------------------------------------------
