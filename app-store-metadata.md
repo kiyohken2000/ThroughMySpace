@@ -143,18 +143,14 @@ visual impairment,color blindness,glaucoma,cataract,spatial photo,accessibility,
 
 ## プライバシーポリシーURL
 
-> App Store Connect に登録が必要。GitHubのプロジェクトページにポリシーを追加するか、別途用意する。
-
-（未設定 — 申請前に追加すること）
-
----
+```
+https://kiyohken2000.github.io/ThroughMySpace/privacy.html
+```
 
 ## サポートURL
 
-> 問い合わせ先として GitHub Issues のURLを使用可
-
 ```
-https://github.com/kiyohken2000/ThroughMySpace/issues
+https://kiyohken2000.github.io/ThroughMySpace/support.html
 ```
 
 ---
@@ -210,7 +206,7 @@ The app displays a disclaimer on launch and within each condition description st
 
 ## チェックリスト（申請前）
 
-- [ ] プライバシーポリシーのURL設定
+- [x] プライバシーポリシーのURL設定（https://kiyohken2000.github.io/ThroughMySpace/privacy.html）
 - [ ] スクリーンショット撮影（visionOS向け）
 - [ ] アプリ内の免責事項表示の確認
 - [ ] Info.plist の `NSPhotoLibraryUsageDescription` が日英両方で記載されているか確認
