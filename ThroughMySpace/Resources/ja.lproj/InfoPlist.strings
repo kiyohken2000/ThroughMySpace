@@ -1,0 +1,3 @@
+/* InfoPlist.strings (ja) */
+
+NSPhotoLibraryUsageDescription = "空間写真を選択して視覚症状のシミュレーションに使用します。";
