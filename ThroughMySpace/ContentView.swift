@@ -142,6 +142,9 @@ struct ContentView: View {
             }
             .padding(.top, 40)
 
+            // 写真選びのヒント
+            PhotoTipsView()
+
             Spacer()
 
                 // 空間写真の選択ボタン
@@ -263,6 +266,59 @@ struct ContentView: View {
         }
 
         appModel.isLoadingPhoto = false
+    }
+}
+
+// ------------------------------------------------------------------
+// 効果的な写真の選び方ヒント
+// ------------------------------------------------------------------
+struct PhotoTipsView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("より体験が伝わる写真を選ぶには", systemImage: "lightbulb")
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            // 各症状のヒント
+            TipRow(
+                icon: "circle.dashed",
+                color: .orange,
+                symptom: "視野狭窄",
+                tip: "部屋全体が広く写っている写真。周辺に家具や窓がある構図が効果的。"
+            )
+            TipRow(
+                icon: "paintpalette",
+                color: .purple,
+                symptom: "色覚異常",
+                tip: "赤・緑・オレンジなど彩度の高い色が多い写真ほど違いが分かりやすい。"
+            )
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+// ヒントの1行
+private struct TipRow: View {
+    let icon: String
+    let color: Color
+    let symptom: String
+    let tip: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(color)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(symptom)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text(tip)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

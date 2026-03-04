@@ -30,9 +30,14 @@ struct ImmersiveView: View {
     @Environment(\.dismissImmersiveSpace) var dismissImmersiveSpace
 
     private let panelAttachmentID = "floatingPanel"
+    private let noticeAttachmentID = "entryNotice"
 
     // ドームEntityへの参照を保持
     @State private var domeEntity: ModelEntity? = nil
+
+    // 体験開始時の注意テキスト表示フラグ
+    // true = 表示中、false = フェードアウト済み
+    @State private var showEntryNotice = true
 
     // 写真の CGImage を保存（MTLTexture → CGImage の変換は一度だけ行う）
     // nil = まだ抽出していない
@@ -61,15 +66,39 @@ struct ImmersiveView: View {
                                 setting: appModel.conditionSetting)
 
             // MARK: フローティングパネルを 3D 空間に配置
+            // 少し上（y=0.6）・正面方向（z=-1.2）に浮かせる
             if let panelEntity = attachments.entity(for: panelAttachmentID) {
                 panelEntity.position = SIMD3<Float>(0, 0.6, -1.2)
                 content.add(panelEntity)
+            }
+
+            // MARK: 体験開始時の注意テキストを 3D 空間に配置
+            // 視線の高さ（y=0）・正面（z=-1.5）に表示し、数秒後に自動消去
+            if let noticeEntity = attachments.entity(for: noticeAttachmentID) {
+                noticeEntity.position = SIMD3<Float>(0, 0, -1.5)
+                content.add(noticeEntity)
             }
 
         } attachments: {
             Attachment(id: panelAttachmentID) {
                 @Bindable var model = appModel
                 FloatingPanelView(conditionSetting: $model.conditionSetting)
+            }
+
+            // 体験開始時の免責事項・注意テキスト
+            // showEntryNotice が false になるとフェードアウト
+            Attachment(id: noticeAttachmentID) {
+                if showEntryNotice {
+                    EntryNoticeView()
+                        .transition(.opacity)
+                }
+            }
+        }
+        // 体験開始時の注意テキストを 5 秒後に自動フェードアウト
+        .task {
+            try? await Task.sleep(for: .seconds(5))
+            withAnimation(.easeOut(duration: 1.0)) {
+                showEntryNotice = false
             }
         }
         // 写真が変わったとき：CGImageキャッシュをクリアして再抽出

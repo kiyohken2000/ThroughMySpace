@@ -38,6 +38,33 @@ enum ConditionType: String, CaseIterable, Identifiable {
         }
     }
 
+    // 詳細説明文（InfoView に表示）
+    var detailDescription: String {
+        switch self {
+        case .none:
+            return ""
+        case .visualField:
+            return """
+                目の内圧が上がり、視神経が\
+                ゆっくりと失われていく病気です。
+
+                視野は少しずつ狭くなるため、\
+                本人が気づかないことが多く、\
+                発見時にはすでに進行していることも。
+                日本の患者数は約400万人。
+                """
+        case .colorBlind:
+            return """
+                特定の色を感じる錐体細胞が\
+                機能しない・弱い状態です。
+
+                赤・緑・茶・オレンジが\
+                似た色に見えるタイプが最も多く、\
+                日本では男性の約5%に見られます。
+                """
+        }
+    }
+
     // SF Symbols アイコン名
     var iconName: String {
         switch self {

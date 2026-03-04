@@ -30,6 +30,8 @@ struct FloatingPanelView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        // パネル本体 + 症状説明カードを縦に並べる
+        VStack(alignment: .leading, spacing: 12) {
         VStack(alignment: .leading, spacing: 20) {
 
             // ヘッダー行（タイトル + ホームに戻るボタン）
@@ -139,6 +141,16 @@ struct FloatingPanelView: View {
         // visionOS のガラス素材（.regularMaterial）を背景に使う
         // React Native の `backgroundColor: 'rgba(0,0,0,0.5)'` より自然な見た目
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+        .animation(.easeInOut(duration: 0.2), value: conditionSetting.type)
+
+        // 症状説明カード（症状なし以外のとき展開）
+        if conditionSetting.type != .none {
+            InfoView(conditionType: conditionSetting.type)
+                .frame(width: 640)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+
+        } // 外側VStack終わり
         .animation(.easeInOut(duration: 0.2), value: conditionSetting.type)
     }
 }
