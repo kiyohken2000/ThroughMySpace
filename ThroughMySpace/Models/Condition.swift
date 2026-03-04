@@ -16,80 +16,47 @@ enum ConditionType: String, CaseIterable, Identifiable {
     case colorBlind           = "colorBlind"           // 色覚異常
     case cataract             = "cataract"             // 白内障（水晶体の混濁）
     case retinitispigmentosa  = "retinitispigmentosa"  // 網膜色素変性症（周辺から視野が失われる）
+    case presbyopia           = "presbyopia"           // 老眼（近距離のピントが合わない）
+    case astigmatism          = "astigmatism"          // 乱視（特定方向にブレる）
 
     var id: String { rawValue }
 
-    // 表示名
+    // 表示名（ローカライズ対応）
     var title: String {
         switch self {
-        case .none:                return "症状なし"
-        case .visualField:         return "視野狭窄"
-        case .colorBlind:          return "色覚異常"
-        case .cataract:            return "白内障"
-        case .retinitispigmentosa: return "網膜色素変性症"
+        case .none:                return String(localized: "condition.none.title")
+        case .visualField:         return String(localized: "condition.visualField.title")
+        case .colorBlind:          return String(localized: "condition.colorBlind.title")
+        case .cataract:            return String(localized: "condition.cataract.title")
+        case .retinitispigmentosa: return String(localized: "condition.rp.title")
+        case .presbyopia:          return String(localized: "condition.presbyopia.title")
+        case .astigmatism:         return String(localized: "condition.astigmatism.title")
         }
     }
 
     // 短い説明文（パネルに表示）
     var shortDescription: String {
         switch self {
-        case .none:
-            return "元の空間写真をそのまま体験します"
-        case .visualField:
-            return "緑内障などで起こる周辺視野の欠損を体験します"
-        case .colorBlind:
-            return "色の見え方の違いを体験します"
-        case .cataract:
-            return "水晶体が濁り、光がぼやけて見える状態を体験します"
-        case .retinitispigmentosa:
-            return "周辺視野から徐々に失われ、トンネル視野になる状態を体験します"
+        case .none:                return String(localized: "condition.none.short")
+        case .visualField:         return String(localized: "condition.visualField.short")
+        case .colorBlind:          return String(localized: "condition.colorBlind.short")
+        case .cataract:            return String(localized: "condition.cataract.short")
+        case .retinitispigmentosa: return String(localized: "condition.rp.short")
+        case .presbyopia:          return String(localized: "condition.presbyopia.short")
+        case .astigmatism:         return String(localized: "condition.astigmatism.short")
         }
     }
 
     // 詳細説明文（InfoView に表示）
     var detailDescription: String {
         switch self {
-        case .none:
-            return ""
-        case .visualField:
-            return """
-                目の内圧が上がり、視神経が\
-                ゆっくりと失われていく病気です。
-
-                視野は少しずつ狭くなるため、\
-                本人が気づかないことが多く、\
-                発見時にはすでに進行していることも。
-                日本の患者数は約400万人。
-                """
-        case .colorBlind:
-            return """
-                特定の色を感じる錐体細胞が\
-                機能しない・弱い状態です。
-
-                赤・緑・茶・オレンジが\
-                似た色に見えるタイプが最も多く、\
-                日本では男性の約5%に見られます。
-                """
-        case .cataract:
-            return """
-                目の水晶体が白く濁り、\
-                光が散乱してぼやけて見える病気です。
-
-                加齢が主な原因で、\
-                60歳以上の約70%に見られます。
-                光源周辺に光の輪（ハロー）が\
-                見えることも特徴のひとつです。
-                """
-        case .retinitispigmentosa:
-            return """
-                網膜の光受容細胞が\
-                徐々に壊れていく遺伝性の病気です。
-
-                夜盲（暗い場所で見えにくい）から始まり、\
-                周辺視野がゆっくりと失われていきます。
-                日本の患者数は約3万人。
-                現在、根本的な治療法はありません。
-                """
+        case .none:                return ""
+        case .visualField:         return String(localized: "condition.visualField.detail")
+        case .colorBlind:          return String(localized: "condition.colorBlind.detail")
+        case .cataract:            return String(localized: "condition.cataract.detail")
+        case .retinitispigmentosa: return String(localized: "condition.rp.detail")
+        case .presbyopia:          return String(localized: "condition.presbyopia.detail")
+        case .astigmatism:         return String(localized: "condition.astigmatism.detail")
         }
     }
 
@@ -101,6 +68,8 @@ enum ConditionType: String, CaseIterable, Identifiable {
         case .colorBlind:          return "paintpalette"
         case .cataract:            return "sun.max"
         case .retinitispigmentosa: return "circle.dotted"
+        case .presbyopia:          return "eyeglasses"
+        case .astigmatism:         return "lines.measurement.horizontal"
         }
     }
 
@@ -112,6 +81,8 @@ enum ConditionType: String, CaseIterable, Identifiable {
         case .colorBlind:          return .purple
         case .cataract:            return .yellow
         case .retinitispigmentosa: return .gray
+        case .presbyopia:          return .green
+        case .astigmatism:         return .cyan
         }
     }
 }
@@ -122,10 +93,11 @@ struct ConditionIntensity: Equatable {
     var value: Float
 
     // スライダーのステップ感のある表現（段階的に設定できる）
-    static let presets: [(label: String, value: Float)] = [
-        ("軽度", 0.3),
-        ("中度", 0.6),
-        ("重度", 1.0),
+    // ローカライズは使用側（FloatingPanelView）で String(localized:) を呼ぶ
+    static let presets: [(labelKey: String, value: Float)] = [
+        ("intensity.mild",     0.3),
+        ("intensity.moderate", 0.6),
+        ("intensity.severe",   1.0),
     ]
 
     init(_ value: Float) {
@@ -152,9 +124,9 @@ enum ColorBlindType: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .deuteranopia: return "2型色覚（緑弱）"
-        case .protanopia:   return "1型色覚（赤弱）"
-        case .tritanopia:   return "3型色覚（青弱）"
+        case .deuteranopia: return String(localized: "colorBlind.deuteranopia")
+        case .protanopia:   return String(localized: "colorBlind.protanopia")
+        case .tritanopia:   return String(localized: "colorBlind.tritanopia")
         }
     }
 }

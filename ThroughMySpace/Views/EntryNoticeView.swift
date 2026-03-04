@@ -15,7 +15,7 @@ struct EntryNoticeView: View {
                 Image(systemName: "eye")
                     .font(.title2)
                     .foregroundStyle(.secondary)
-                Text("体験を始める前に")
+                Text("notice.title", tableName: "Localizable")
                     .font(.headline)
             }
 
@@ -23,13 +23,13 @@ struct EntryNoticeView: View {
 
             // 免責事項
             VStack(alignment: .leading, spacing: 8) {
-                Label("このアプリが提供する体験は近似的なシミュレーションです。",
+                Label(String(localized: "notice.line1"),
                       systemImage: "info.circle")
                     .font(.subheadline)
-                Label("実際の視覚症状は個人差があります。",
+                Label(String(localized: "notice.line2"),
                       systemImage: "person.2")
                     .font(.subheadline)
-                Label("医療診断・治療の代替として使用しないでください。",
+                Label(String(localized: "notice.line3"),
                       systemImage: "cross.case")
                     .font(.subheadline)
             }
@@ -38,7 +38,7 @@ struct EntryNoticeView: View {
             Divider()
 
             // フェードアウトのヒント
-            Text("このメッセージはまもなく消えます")
+            Text("notice.fade", tableName: "Localizable")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }

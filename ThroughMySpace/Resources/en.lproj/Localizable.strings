@@ -1,0 +1,74 @@
+/* Localizable.strings (en) */
+
+// ----- ContentView -----
+"app.subtitle" = "A visual condition simulator in your own space";
+"button.selectPhoto" = "Choose from Photo Library";
+"simulator.warning" = "⚠️ Simulator mode: standard photo used (same image for both eyes)";
+"loading.photo" = "Loading spatial photo...";
+"disclaimer.short" = "This app provides approximate simulations only.\nActual visual conditions vary between individuals.\nDo not use as a substitute for medical diagnosis or treatment.";
+"alert.error.title" = "Error";
+"alert.error.unknown" = "An unknown error occurred";
+"tipsView.header" = "Tips for choosing the best photo";
+"badge.comingSoon" = "Coming Soon";
+
+// ----- PhotoTips -----
+"tip.visualField.text" = "A wide-angle shot of your room with furniture and windows in the periphery works best.";
+"tip.colorBlind.text" = "Photos with many saturated reds, greens, and oranges show the difference most clearly.";
+"tip.cataract.text" = "Photos with multiple light sources (windows, lamps) are most effective.";
+"tip.rp.text" = "Compositions with important objects in the periphery highlight the contrast.";
+"tip.presbyopia.text" = "Photos with close-up subjects — a book, table setting, or your hands — show the blur most clearly.";
+"tip.astigmatism.text" = "Photos with light sources or text emphasize the directional blur effect.";
+"tip.scotoma.label" = "Central Scotoma";
+"tip.scotoma.text" = "Photos with faces or text in the center — things you want to look at — work best.";
+"tip.floaters.label" = "Floaters";
+"tip.floaters.text" = "Photos with bright, uniform backgrounds such as sky or white walls make shadows easier to see.";
+
+// ----- FloatingPanelView -----
+"panel.title" = "Select Condition";
+"panel.backHome" = "Back to Home";
+"panel.intensity" = "Intensity";
+"panel.colorBlindType" = "Color Vision Type";
+"intensity.mild" = "Mild";
+"intensity.moderate" = "Moderate";
+"intensity.severe" = "Severe";
+
+// ----- EntryNoticeView -----
+"notice.title" = "Before You Begin";
+"notice.line1" = "This app provides approximate simulations only.";
+"notice.line2" = "Actual visual conditions vary between individuals.";
+"notice.line3" = "Do not use as a substitute for medical diagnosis or treatment.";
+"notice.fade" = "This message will disappear shortly";
+
+// ----- InfoView -----
+"info.disclaimer" = "This is an approximate experience. Actual vision varies between individuals.";
+
+// ----- ConditionType.title -----
+"condition.none.title" = "None";
+"condition.visualField.title" = "Visual Field Loss";
+"condition.colorBlind.title" = "Color Vision Deficiency";
+"condition.cataract.title" = "Cataracts";
+"condition.rp.title" = "Retinitis Pigmentosa";
+"condition.presbyopia.title" = "Presbyopia";
+"condition.astigmatism.title" = "Astigmatism";
+
+// ----- ConditionType.shortDescription -----
+"condition.none.short" = "Experience your spatial photo as-is";
+"condition.visualField.short" = "Experience peripheral vision loss as seen in glaucoma";
+"condition.colorBlind.short" = "Experience how colors appear differently";
+"condition.cataract.short" = "Experience blurring and light scatter caused by lens opacity";
+"condition.rp.short" = "Experience progressive loss of peripheral vision leading to tunnel vision";
+"condition.presbyopia.short" = "Experience difficulty focusing on close-up objects";
+"condition.astigmatism.short" = "Experience light and edges appearing blurred in a specific direction";
+
+// ----- ConditionType.detailDescription -----
+"condition.visualField.detail" = "A condition where increased eye pressure gradually damages the optic nerve.\n\nThe visual field narrows slowly, often going unnoticed until it has advanced significantly.\nApproximately 4 million patients in Japan.";
+"condition.colorBlind.detail" = "A condition where cone cells that sense certain colors are absent or weakened.\n\nThe most common type causes reds, greens, browns, and oranges to appear similar.\nAffects approximately 5% of men in Japan.";
+"condition.cataract.detail" = "A condition where the eye's lens becomes cloudy, causing light to scatter and vision to blur.\n\nMainly caused by aging, affecting approximately 70% of people over 60.\nA characteristic symptom is seeing halos around light sources.";
+"condition.rp.detail" = "A hereditary disease where the retina's photoreceptor cells gradually degenerate.\n\nBegins with night blindness and slowly progresses to loss of peripheral vision.\nApproximately 30,000 patients in Japan. No fundamental cure currently exists.";
+"condition.presbyopia.detail" = "A condition where the lens loses elasticity with age, making it difficult to focus on nearby objects.\n\nTypically begins in the 40s and affects nearly everyone by their 60s.\nMost noticeable when reading books, looking at a phone, or seeing close-up objects.";
+"condition.astigmatism.detail" = "A condition caused by an irregular curve in the cornea or lens, preventing light from focusing at a single point.\n\nMild astigmatism is common. A characteristic symptom is light appearing streaked or blurred, especially at night.\nCan be corrected with glasses or contact lenses.";
+
+// ----- ColorBlindType.title -----
+"colorBlind.deuteranopia" = "Type 2 (Green Weak)";
+"colorBlind.protanopia" = "Type 1 (Red Weak)";
+"colorBlind.tritanopia" = "Type 3 (Blue Weak)";

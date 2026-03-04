@@ -265,6 +265,14 @@ struct ImmersiveView: View {
 
         case .retinitispigmentosa:
             filteredCI = applyRetinitisFilter(to: ciImage, intensity: setting.intensity.value)
+
+        case .presbyopia:
+            // TODO: フェーズ2で実装予定（CIGaussianBlur を中心部に適用）
+            filteredCI = ciImage
+
+        case .astigmatism:
+            // TODO: フェーズ2で実装予定（CIMotionBlur を特定角度で適用）
+            filteredCI = ciImage
         }
 
         // キャンセルチェック（重い処理の後）

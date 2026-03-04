@@ -148,7 +148,7 @@ struct ContentView: View {
                     .font(.largeTitle)
                     .fontWeight(.bold)
 
-                Text("自分の空間で体験する視覚症状シミュレーター")
+                Text("app.subtitle", tableName: "Localizable")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -162,7 +162,7 @@ struct ContentView: View {
             Button {
                 showPicker = true
             } label: {
-                Label("フォトライブラリから選ぶ", systemImage: "photo.badge.plus")
+                Label(String(localized: "button.selectPhoto"), systemImage: "photo.badge.plus")
                     .font(.title3)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 12)
@@ -172,7 +172,7 @@ struct ContentView: View {
 
             // シミュレーター用の注意書き
             #if targetEnvironment(simulator)
-            Text("⚠️ シミュレーターでは通常写真を使用します（左右同一画像）")
+            Text("simulator.warning", tableName: "Localizable")
                 .font(.caption2)
                 .foregroundStyle(.orange)
             #endif
@@ -181,13 +181,13 @@ struct ContentView: View {
             if appModel.isLoadingPhoto {
                 HStack(spacing: 12) {
                     ProgressView()
-                    Text("空間写真を読み込んでいます...")
+                    Text("loading.photo", tableName: "Localizable")
                         .foregroundStyle(.secondary)
                 }
             }
 
             // 免責事項
-            Text("このアプリが提供する体験は近似的なシミュレーションです。\n実際の視覚症状は個人差があります。\n医療診断・治療の代替として使用しないでください。")
+            Text("disclaimer.short", tableName: "Localizable")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -204,10 +204,10 @@ struct ContentView: View {
                 isPresented: $showPicker
             )
         }
-        .alert("エラー", isPresented: $showErrorAlert) {
+        .alert(String(localized: "alert.error.title"), isPresented: $showErrorAlert) {
             Button("OK") { }
         } message: {
-            Text(appModel.photoLoadError ?? "不明なエラーが発生しました")
+            Text(appModel.photoLoadError ?? String(localized: "alert.error.unknown"))
         }
     }
 
@@ -280,30 +280,33 @@ struct ContentView: View {
 // 効果的な写真の選び方ヒント（2列グリッド表示）
 // ------------------------------------------------------------------
 struct PhotoTipsView: View {
-    // 症状カードのデータ（icon, color, symptom, tip, isComingSoon）
-    private let tips: [(icon: String, color: Color, symptom: String, tip: String, isComingSoon: Bool)] = [
-        ("circle.dashed", .orange, "視野狭窄",      "部屋全体が広く写った写真。周辺に家具や窓がある構図が効果的。",     false),
-        ("paintpalette",  .purple, "色覚異常",      "赤・緑・オレンジなど彩度の高い色が多い写真ほど違いが分かりやすい。", false),
-        ("sun.max",       .yellow, "白内障",        "光源（窓・照明）が多い写真で効果的。",                         false),
-        ("circle.dotted", .gray,   "網膜色素変性症", "周辺に重要な物が多い構図で体験の差が際立つ。",                   false),
-        ("scope",         .red,    "中心暗点",      "中央に顔や文字など「見たいもの」がある写真がわかりやすい。",        true),
-        ("bubble.left",   .teal,   "飛蚊症",        "空・白壁など均一で明るい背景の写真で影が見えやすい。",            true),
+    // 症状カードのデータ（icon, color, symptomKey, tipKey, isComingSoon）
+    // symptomKey / tipKey は Localizable.strings のキー
+    private let tips: [(icon: String, color: Color, symptomKey: String, tipKey: String, isComingSoon: Bool)] = [
+        ("circle.dashed",              .orange, "condition.visualField.title",   "tip.visualField.text",   false),
+        ("paintpalette",               .purple, "condition.colorBlind.title",    "tip.colorBlind.text",    false),
+        ("sun.max",                    .yellow, "condition.cataract.title",      "tip.cataract.text",      false),
+        ("circle.dotted",              .gray,   "condition.rp.title",            "tip.rp.text",            false),
+        ("eyeglasses",                 .green,  "condition.presbyopia.title",    "tip.presbyopia.text",    true),
+        ("lines.measurement.horizontal", .cyan, "condition.astigmatism.title",   "tip.astigmatism.text",   true),
+        ("scope",                      .red,    "tip.scotoma.label",             "tip.scotoma.text",       true),
+        ("bubble.left",                .teal,   "tip.floaters.label",            "tip.floaters.text",      true),
     ]
 
     // 縦1列レイアウト
     var body: some View {
         VStack(spacing: 10) {
-            Label("より体験が伝わる写真を選ぶには", systemImage: "lightbulb")
+            Label(String(localized: "tipsView.header"), systemImage: "lightbulb")
                 .font(.headline)
                 .foregroundStyle(.primary)
 
             VStack(spacing: 6) {
-                ForEach(tips, id: \.symptom) { tip in
+                ForEach(tips, id: \.symptomKey) { tip in
                     TipCard(
                         icon: tip.icon,
                         color: tip.color,
-                        symptom: tip.symptom,
-                        tip: tip.tip,
+                        symptom: String(localized: String.LocalizationValue(tip.symptomKey)),
+                        tip: String(localized: String.LocalizationValue(tip.tipKey)),
                         isComingSoon: tip.isComingSoon
                     )
                 }
@@ -336,7 +339,7 @@ private struct TipCard: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(isComingSoon ? .secondary : .primary)
                     if isComingSoon {
-                        Text("追加予定")
+                        Text("badge.comingSoon", tableName: "Localizable")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 4)

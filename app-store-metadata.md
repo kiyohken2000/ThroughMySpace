@@ -46,6 +46,12 @@ Through My Space は、自分の部屋・職場・日常の空間を撮影した
 ■ 網膜色素変性症
 網膜の光受容細胞が徐々に壊れていく遺伝性の病気です。周辺視野から失われていきトンネル視野になる状態を体験します。日本の患者数は約3万人。
 
+■ 老眼（近日追加予定）
+加齢により水晶体の弾力が失われ、近距離にピントが合いにくくなる状態を体験します。40歳代から始まり60歳代ではほぼ全員が影響を受けます。
+
+■ 乱視（近日追加予定）
+角膜・水晶体のゆがみにより、光や輪郭が特定方向にブレて見える状態を体験します。夜間に光がにじんで見えることが特徴です。
+
 ─────────────────────────
 使い方
 ─────────────────────────
@@ -70,6 +76,9 @@ Through My Space は、自分の部屋・職場・日常の空間を撮影した
 
 ・リアルタイム切り替え
   症状と強度をその場で変更でき、正常な視野との比較が直感的に行えます。
+
+・日英両対応
+  端末の言語設定に応じて日本語・英語で表示されます。
 
 ─────────────────────────
 ご注意
@@ -106,6 +115,12 @@ Experience light scattering and halos around light sources due to lens opacity. 
 
 ■ Retinitis Pigmentosa
 Experience the progressive loss of peripheral vision leading to tunnel vision. A hereditary retinal disease affecting approximately 30,000 patients in Japan.
+
+■ Presbyopia (Coming Soon)
+Experience difficulty focusing on nearby objects due to age-related loss of lens elasticity. Affects nearly everyone by their 60s.
+
+■ Astigmatism (Coming Soon)
+Experience light and edges appearing blurred in a specific direction due to irregular curvature of the cornea or lens.
 
 ─────────────────────────
 How to Use
@@ -160,13 +175,15 @@ https://kiyohken2000.github.io/ThroughMySpace/support.html
 > App Store Connect の「審査に関する情報」欄に入力する
 
 ```
-This app simulates visual conditions (glaucoma, color vision deficiency, cataracts, retinitis pigmentosa) using spatial photos on Apple Vision Pro.
+This app simulates visual conditions (glaucoma, color vision deficiency, cataracts, retinitis pigmentosa) using spatial photos on Apple Vision Pro. Presbyopia and astigmatism simulations are planned for a future update.
 
 The app requires a spatial photo from the user's photo library to function. A standard HEIC photo is also accepted for testing purposes.
 
 There are no in-app purchases, accounts, or network requests.
 
 The app displays a disclaimer on launch and within each condition description stating that the experience is approximate and should not be used for medical diagnosis.
+
+The app supports Japanese and English, switching automatically based on device language settings.
 ```
 
 ---

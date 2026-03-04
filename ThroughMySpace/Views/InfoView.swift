@@ -37,7 +37,7 @@ struct InfoView: View {
             Divider()
 
             // 免責事項（仕様書で必須とされているテキスト）
-            Text("これは近似的な体験です。実際の見え方は個人差があります。")
+            Text("info.disclaimer", tableName: "Localizable")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

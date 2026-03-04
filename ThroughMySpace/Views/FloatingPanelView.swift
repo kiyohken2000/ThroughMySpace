@@ -39,7 +39,7 @@ struct FloatingPanelView: View {
 
             // ヘッダー行（常に表示）
             HStack {
-                Text("症状を選択")
+                Text("panel.title", tableName: "Localizable")
                     .font(.title)
                     .fontWeight(.semibold)
 
@@ -83,7 +83,7 @@ struct FloatingPanelView: View {
                         appModel.conditionSetting = ConditionSetting()
                     }
                 } label: {
-                    Label("ホームに戻る", systemImage: "house")
+                    Label(String(localized: "panel.backHome"), systemImage: "house")
                         .font(.subheadline)
                 }
                 .buttonStyle(.bordered)
@@ -119,7 +119,7 @@ struct FloatingPanelView: View {
                     if conditionSetting.type != .none {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text("強度")
+                                Text("panel.intensity", tableName: "Localizable")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                 Spacer()
@@ -141,8 +141,8 @@ struct FloatingPanelView: View {
 
                             // 強度プリセットボタン（軽度/中度/重度）
                             HStack(spacing: 8) {
-                                ForEach(ConditionIntensity.presets, id: \.label) { preset in
-                                    Button(preset.label) {
+                                ForEach(ConditionIntensity.presets, id: \.labelKey) { preset in
+                                    Button(String(localized: String.LocalizationValue(preset.labelKey))) {
                                         conditionSetting.intensity = ConditionIntensity(preset.value)
                                     }
                                     .buttonStyle(.bordered)
@@ -163,11 +163,11 @@ struct FloatingPanelView: View {
                         Divider()
 
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("色覚タイプ")
+                            Text("panel.colorBlindType", tableName: "Localizable")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
 
-                            Picker("色覚タイプ", selection: $conditionSetting.colorBlindType) {
+                            Picker(String(localized: "panel.colorBlindType"), selection: $conditionSetting.colorBlindType) {
                                 ForEach(ColorBlindType.allCases) { type in
                                     Text(type.title).tag(type)
                                 }

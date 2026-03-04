@@ -1,0 +1,74 @@
+/* Localizable.strings (ja) */
+
+// ----- ContentView -----
+"app.subtitle" = "自分の空間で体験する視覚症状シミュレーター";
+"button.selectPhoto" = "フォトライブラリから選ぶ";
+"simulator.warning" = "⚠️ シミュレーターでは通常写真を使用します（左右同一画像）";
+"loading.photo" = "空間写真を読み込んでいます...";
+"disclaimer.short" = "このアプリが提供する体験は近似的なシミュレーションです。\n実際の視覚症状は個人差があります。\n医療診断・治療の代替として使用しないでください。";
+"alert.error.title" = "エラー";
+"alert.error.unknown" = "不明なエラーが発生しました";
+"tipsView.header" = "より体験が伝わる写真を選ぶには";
+"badge.comingSoon" = "追加予定";
+
+// ----- PhotoTips (条件ヒント) -----
+"tip.visualField.text" = "部屋全体が広く写った写真。周辺に家具や窓がある構図が効果的。";
+"tip.colorBlind.text" = "赤・緑・オレンジなど彩度の高い色が多い写真ほど違いが分かりやすい。";
+"tip.cataract.text" = "光源（窓・照明）が多い写真で効果的。";
+"tip.rp.text" = "周辺に重要な物が多い構図で体験の差が際立つ。";
+"tip.presbyopia.text" = "手元・テーブルの上など近距離の被写体がある写真でぼかし効果が伝わりやすい。";
+"tip.astigmatism.text" = "光源（窓・照明）や文字が多い写真でブレの効果が際立つ。";
+"tip.scotoma.label" = "中心暗点";
+"tip.scotoma.text" = "中央に顔や文字など「見たいもの」がある写真がわかりやすい。";
+"tip.floaters.label" = "飛蚊症";
+"tip.floaters.text" = "空・白壁など均一で明るい背景の写真で影が見えやすい。";
+
+// ----- FloatingPanelView -----
+"panel.title" = "症状を選択";
+"panel.backHome" = "ホームに戻る";
+"panel.intensity" = "強度";
+"panel.colorBlindType" = "色覚タイプ";
+"intensity.mild" = "軽度";
+"intensity.moderate" = "中度";
+"intensity.severe" = "重度";
+
+// ----- EntryNoticeView -----
+"notice.title" = "体験を始める前に";
+"notice.line1" = "このアプリが提供する体験は近似的なシミュレーションです。";
+"notice.line2" = "実際の視覚症状は個人差があります。";
+"notice.line3" = "医療診断・治療の代替として使用しないでください。";
+"notice.fade" = "このメッセージはまもなく消えます";
+
+// ----- InfoView -----
+"info.disclaimer" = "これは近似的な体験です。実際の見え方は個人差があります。";
+
+// ----- ConditionType.title -----
+"condition.none.title" = "症状なし";
+"condition.visualField.title" = "視野狭窄";
+"condition.colorBlind.title" = "色覚異常";
+"condition.cataract.title" = "白内障";
+"condition.rp.title" = "網膜色素変性症";
+"condition.presbyopia.title" = "老眼";
+"condition.astigmatism.title" = "乱視";
+
+// ----- ConditionType.shortDescription -----
+"condition.none.short" = "元の空間写真をそのまま体験します";
+"condition.visualField.short" = "緑内障などで起こる周辺視野の欠損を体験します";
+"condition.colorBlind.short" = "色の見え方の違いを体験します";
+"condition.cataract.short" = "水晶体が濁り、光がぼやけて見える状態を体験します";
+"condition.rp.short" = "周辺視野から徐々に失われ、トンネル視野になる状態を体験します";
+"condition.presbyopia.short" = "近距離にピントが合いにくくなる状態を体験します";
+"condition.astigmatism.short" = "光や輪郭が特定方向にブレて見える状態を体験します";
+
+// ----- ConditionType.detailDescription -----
+"condition.visualField.detail" = "目の内圧が上がり、視神経がゆっくりと失われていく病気です。\n\n視野は少しずつ狭くなるため、本人が気づかないことが多く、発見時にはすでに進行していることも。\n日本の患者数は約400万人。";
+"condition.colorBlind.detail" = "特定の色を感じる錐体細胞が機能しない・弱い状態です。\n\n赤・緑・茶・オレンジが似た色に見えるタイプが最も多く、日本では男性の約5%に見られます。";
+"condition.cataract.detail" = "目の水晶体が白く濁り、光が散乱してぼやけて見える病気です。\n\n加齢が主な原因で、60歳以上の約70%に見られます。\n光源周辺に光の輪（ハロー）が見えることも特徴のひとつです。";
+"condition.rp.detail" = "網膜の光受容細胞が徐々に壊れていく遺伝性の病気です。\n\n夜盲（暗い場所で見えにくい）から始まり、周辺視野がゆっくりと失われていきます。\n日本の患者数は約3万人。現在、根本的な治療法はありません。";
+"condition.presbyopia.detail" = "加齢により水晶体の弾力が失われ、近くを見るときにピントが合いにくくなる状態です。\n\n40歳代から始まることが多く、60歳代ではほぼ全員が影響を受けます。\n本・スマートフォン・食事など、手元の「近景」を見るときに特に感じます。";
+"condition.astigmatism.detail" = "角膜や水晶体のゆがみにより、光が一点に集まらず特定方向にブレて見える状態です。\n\n軽度の乱視は多くの人に見られます。夜間や暗い環境で光がにじんで見えることが特徴です。\n眼鏡・コンタクトで矯正できますが、未矯正だと目の疲れの原因になります。";
+
+// ----- ColorBlindType.title -----
+"colorBlind.deuteranopia" = "2型色覚（緑弱）";
+"colorBlind.protanopia" = "1型色覚（赤弱）";
+"colorBlind.tritanopia" = "3型色覚（青弱）";
