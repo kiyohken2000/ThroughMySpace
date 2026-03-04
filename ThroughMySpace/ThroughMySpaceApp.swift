@@ -18,6 +18,8 @@ struct ThroughMySpaceApp: App {
             ContentView()
                 .environment(appModel)
         }
+        // ウィンドウの初期サイズを指定（横幅を抑えて縦長に）
+        .defaultSize(width: 480, height: 720)
 
         ImmersiveSpace(id: appModel.immersiveSpaceID) {
             ImmersiveView()

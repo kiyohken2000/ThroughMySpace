@@ -128,26 +128,35 @@ struct ContentView: View {
     @State private var showErrorAlert = false
 
     var body: some View {
-        VStack(spacing: 24) {
-            // ヘッダー
-            VStack(spacing: 8) {
+        VStack(spacing: 16) {
+            // ヘッダー（アイコン＋タイトル）
+            VStack(spacing: 10) {
+                // アプリアイコン
+                // Resources/images/ に置いたファイルは Assets.xcassets 外なので
+                // Bundle.main から UIImage で読み込む
+                if let uiImage = UIImage(named: "icon", in: .main, with: nil)
+                    ?? UIImage(contentsOfFile: Bundle.main.path(forResource: "icon", ofType: "png") ?? "") {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 80, height: 80)
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+                }
+
                 Text("Through My Space")
-                    .font(.extraLargeTitle)
+                    .font(.largeTitle)
                     .fontWeight(.bold)
 
-                Text("自分の空間で体験する\n視覚症状シミュレーター")
-                    .font(.title2)
-                    .multilineTextAlignment(.center)
+                Text("自分の空間で体験する視覚症状シミュレーター")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            .padding(.top, 40)
 
             // 写真選びのヒント
             PhotoTipsView()
 
-            Spacer()
-
-                // 空間写真の選択ボタン
+            // 空間写真の選択ボタン
             // タップすると SpatialPhotoPicker (PHPickerViewController) がシートで開く
             // selection = .continuous により写真タップで即確定（確定ボタン不要）
             Button {
@@ -155,7 +164,8 @@ struct ContentView: View {
             } label: {
                 Label("フォトライブラリから選ぶ", systemImage: "photo.badge.plus")
                     .font(.title3)
-                    .padding()
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
             }
             .buttonStyle(.borderedProminent)
             .disabled(appModel.isLoadingPhoto)
@@ -176,16 +186,13 @@ struct ContentView: View {
                 }
             }
 
-            Spacer()
-
             // 免責事項
             Text("このアプリが提供する体験は近似的なシミュレーションです。\n実際の視覚症状は個人差があります。\n医療診断・治療の代替として使用しないでください。")
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
-                .padding(.bottom, 20)
         }
-        .padding()
+        .padding(20)
         // SpatialPhotoPicker をシートとして表示
         .sheet(isPresented: $showPicker) {
             SpatialPhotoPicker(
@@ -270,55 +277,80 @@ struct ContentView: View {
 }
 
 // ------------------------------------------------------------------
-// 効果的な写真の選び方ヒント
+// 効果的な写真の選び方ヒント（2列グリッド表示）
 // ------------------------------------------------------------------
 struct PhotoTipsView: View {
+    // 症状カードのデータ（icon, color, symptom, tip, isComingSoon）
+    private let tips: [(icon: String, color: Color, symptom: String, tip: String, isComingSoon: Bool)] = [
+        ("circle.dashed", .orange, "視野狭窄",      "部屋全体が広く写った写真。周辺に家具や窓がある構図が効果的。",     false),
+        ("paintpalette",  .purple, "色覚異常",      "赤・緑・オレンジなど彩度の高い色が多い写真ほど違いが分かりやすい。", false),
+        ("sun.max",       .yellow, "白内障",        "光源（窓・照明）が多い写真で効果的。",                         false),
+        ("circle.dotted", .gray,   "網膜色素変性症", "周辺に重要な物が多い構図で体験の差が際立つ。",                   false),
+        ("scope",         .red,    "中心暗点",      "中央に顔や文字など「見たいもの」がある写真がわかりやすい。",        true),
+        ("bubble.left",   .teal,   "飛蚊症",        "空・白壁など均一で明るい背景の写真で影が見えやすい。",            true),
+    ]
+
+    // 縦1列レイアウト
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(spacing: 10) {
             Label("より体験が伝わる写真を選ぶには", systemImage: "lightbulb")
                 .font(.headline)
                 .foregroundStyle(.primary)
 
-            // 各症状のヒント
-            TipRow(
-                icon: "circle.dashed",
-                color: .orange,
-                symptom: "視野狭窄",
-                tip: "部屋全体が広く写っている写真。周辺に家具や窓がある構図が効果的。"
-            )
-            TipRow(
-                icon: "paintpalette",
-                color: .purple,
-                symptom: "色覚異常",
-                tip: "赤・緑・オレンジなど彩度の高い色が多い写真ほど違いが分かりやすい。"
-            )
+            VStack(spacing: 6) {
+                ForEach(tips, id: \.symptom) { tip in
+                    TipCard(
+                        icon: tip.icon,
+                        color: tip.color,
+                        symptom: tip.symptom,
+                        tip: tip.tip,
+                        isComingSoon: tip.isComingSoon
+                    )
+                }
+            }
         }
-        .padding(16)
+        .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
-// ヒントの1行
-private struct TipRow: View {
+// 症状カード（1行）
+private struct TipCard: View {
     let icon: String
     let color: Color
     let symptom: String
     let tip: String
+    var isComingSoon: Bool = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon)
-                .foregroundStyle(color)
-                .frame(width: 20)
+                .foregroundStyle(isComingSoon ? color.opacity(0.45) : color)
+                .font(.subheadline)
+                .frame(width: 18)
+                .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
-                Text(symptom)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                HStack(spacing: 6) {
+                    Text(symptom)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(isComingSoon ? .secondary : .primary)
+                    if isComingSoon {
+                        Text("追加予定")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(.quaternary, in: Capsule())
+                    }
+                }
                 Text(tip)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption2)
+                    .foregroundStyle(isComingSoon ? .tertiary : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

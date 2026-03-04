@@ -31,6 +31,7 @@ struct ImmersiveView: View {
 
     private let panelAttachmentID = "floatingPanel"
     private let noticeAttachmentID = "entryNotice"
+    private let infoAttachmentID   = "infoPanel"
 
     // ドームEntityへの参照を保持
     @State private var domeEntity: ModelEntity? = nil
@@ -38,6 +39,14 @@ struct ImmersiveView: View {
     // 体験開始時の注意テキスト表示フラグ
     // true = 表示中、false = フェードアウト済み
     @State private var showEntryNotice = true
+
+    // 症状説明（InfoView）の表示フラグ
+    // FloatingPanel の ⓘ ボタンで切り替える
+    @State private var showInfo = false
+
+    // フローティングパネルの最小化フラグ
+    // true = ヘッダーのみ表示
+    @State private var isPanelMinimized = false
 
     // 写真の CGImage を保存（MTLTexture → CGImage の変換は一度だけ行う）
     // nil = まだ抽出していない
@@ -70,19 +79,41 @@ struct ImmersiveView: View {
             if let panelEntity = attachments.entity(for: panelAttachmentID) {
                 panelEntity.position = SIMD3<Float>(0, 0.6, -1.2)
                 content.add(panelEntity)
-            }
 
-            // MARK: 体験開始時の注意テキストを 3D 空間に配置
-            // 視線の高さ（y=0）・正面（z=-1.5）に表示し、数秒後に自動消去
-            if let noticeEntity = attachments.entity(for: noticeAttachmentID) {
-                noticeEntity.position = SIMD3<Float>(0, 0, -1.5)
-                content.add(noticeEntity)
+                // MARK: 症状説明（InfoView）をパネルの子として配置
+                // 親（パネル）の座標系でパネルのすぐ上（y=0.35）に配置
+                // 親が移動しても一緒に動く
+                if let infoEntity = attachments.entity(for: infoAttachmentID) {
+                    infoEntity.position = SIMD3<Float>(0, 0.35, 0)
+                    panelEntity.addChild(infoEntity)
+                }
+
+                // MARK: 体験開始時の注意テキストもパネルの子として配置
+                // InfoView と同じ位置（同時に表示されることはない）
+                if let noticeEntity = attachments.entity(for: noticeAttachmentID) {
+                    noticeEntity.position = SIMD3<Float>(0, 0.35, 0)
+                    panelEntity.addChild(noticeEntity)
+                }
             }
 
         } attachments: {
             Attachment(id: panelAttachmentID) {
                 @Bindable var model = appModel
-                FloatingPanelView(conditionSetting: $model.conditionSetting)
+                FloatingPanelView(
+                    conditionSetting: $model.conditionSetting,
+                    showInfo: $showInfo,
+                    isMinimized: $isPanelMinimized
+                )
+            }
+
+            // 症状説明カード（showInfo = true のとき表示）
+            // FloatingPanel の ⓘ ボタンで切り替える
+            Attachment(id: infoAttachmentID) {
+                if showInfo {
+                    InfoView(conditionType: appModel.conditionSetting.type)
+                        .frame(width: 640)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
             }
 
             // 体験開始時の免責事項・注意テキスト
@@ -121,6 +152,12 @@ struct ImmersiveView: View {
                 await applyMaterial(to: dome,
                                     textures: appModel.selectedStereoTextures,
                                     setting: newSetting)
+            }
+            // 症状なしに切り替えたら InfoView を閉じる
+            if newSetting.type == .none {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showInfo = false
+                }
             }
         }
     }
@@ -222,6 +259,12 @@ struct ImmersiveView: View {
                 type: setting.colorBlindType,
                 intensity: setting.intensity.value
             )
+
+        case .cataract:
+            filteredCI = applyCataractFilter(to: ciImage, intensity: setting.intensity.value)
+
+        case .retinitispigmentosa:
+            filteredCI = applyRetinitisFilter(to: ciImage, intensity: setting.intensity.value)
         }
 
         // キャンセルチェック（重い処理の後）
@@ -476,6 +519,167 @@ struct ImmersiveView: View {
         controlsFilter.contrast    = 1
 
         return controlsFilter.outputImage ?? matrixOutput
+    }
+
+    // ------------------------------------------------------------------
+    // 白内障フィルター（Bloom 効果によるハレーション）
+    //
+    // 【白内障の視覚的特徴】
+    // ・水晶体の混濁により光が散乱する
+    // ・コントラストが下がり、全体がかすんで見える
+    // ・光源周辺に光の輪（ハロー）が広がる
+    // ・黄みがかった白濁（古い水晶体は黄色くなる）
+    //
+    // 【実装：3段階のパイプライン】
+    // 1. CIColorControls: 彩度を下げ、コントラストを落とす（霞み）
+    // 2. CIGaussianBlur: 全体をぼかす（光散乱）
+    // 3. CIBlendWithMask: 元画像にぼかし画像を加算合成（Bloom）
+    //    → 明るい部分だけがにじんで広がる効果
+    // 4. CIColorMatrix: わずかに黄みを加える（水晶体の黄変）
+    // ------------------------------------------------------------------
+    private func applyCataractFilter(to image: CIImage, intensity: Float) -> CIImage {
+        guard intensity > 0.01 else { return image }
+
+        let width  = image.extent.width
+        let height = image.extent.height
+
+        // Step 1: 彩度低下・コントラスト低下・輝度上昇（霞み表現）
+        // saturation: 1.0 → 彩度を落とす（白濁で色が薄れる）
+        // contrast:   1.0 → 下げる（明暗差が減る）
+        // brightness: 0.0 → 上げる（全体が白っぽくなる）
+        let hazeFilter = CIFilter.colorControls()
+        hazeFilter.inputImage  = image
+        hazeFilter.saturation  = mix(1.0, 0.6, t: intensity)
+        hazeFilter.contrast    = mix(1.0, 0.75, t: intensity)
+        hazeFilter.brightness  = mix(0.0, 0.12, t: intensity)
+        guard let hazedImage = hazeFilter.outputImage else { return image }
+
+        // Step 2: ガウスぼかし（光散乱の表現）
+        // radius: intensity=1.0 で短辺の 2.5%（全体がふんわりぼける）
+        let blurRadius = Double(mix(0.0, Float(min(width, height)) * 0.025, t: intensity))
+        let blurFilter = CIFilter.gaussianBlur()
+        blurFilter.inputImage = hazedImage
+        blurFilter.radius     = Float(blurRadius)
+        guard let blurredImage = blurFilter.outputImage else { return hazedImage }
+
+        // ぼかしで広がったはみ出し部分を元のサイズにクロップ
+        let clampedBlur = blurredImage.cropped(to: image.extent)
+
+        // Step 3: 輝度マスクを使った Bloom 加算合成
+        // 明るい部分だけを抽出してぼかし画像を重ねる
+        // → 光源周辺だけが「にじむ」Bloom 効果
+        //
+        // CIBlendWithMask:
+        //   backgroundImage = 霞み処理した元画像
+        //   inputImage      = ぼかした画像（Bloom 光）
+        //   maskImage       = 輝度マスク（明るいほど白 = ぼかし画像が見える）
+        let luminanceMask = hazedImage
+            .applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 0.0,   // グレースケール化
+                kCIInputContrastKey: 2.0,      // コントラスト強調（明暗を二極化）
+                kCIInputBrightnessKey: -0.1    // 暗い部分をさらに暗くする
+            ])
+
+        let bloomFilter = CIFilter(name: "CIBlendWithMask")!
+        bloomFilter.setValue(hazedImage,    forKey: kCIInputBackgroundImageKey)
+        bloomFilter.setValue(clampedBlur,   forKey: kCIInputImageKey)
+        bloomFilter.setValue(luminanceMask, forKey: kCIInputMaskImageKey)
+        guard let bloomedImage = bloomFilter.outputImage else { return hazedImage }
+
+        // Step 4: わずかに黄みを加える（加齢による水晶体の黄変）
+        // 赤・緑をわずかに上げ、青を少し下げることで黄みがかった色調に
+        let yellowTintStrength = CGFloat(mix(0.0, 0.05, t: intensity))
+        let tintFilter = CIFilter.colorMatrix()
+        tintFilter.inputImage = bloomedImage
+        // 単位行列にわずかな黄み調整を加える
+        tintFilter.rVector = CIVector(x: 1.0, y: 0, z: 0, w: 0)
+        tintFilter.gVector = CIVector(x: 0, y: 1.0, z: 0, w: 0)
+        tintFilter.bVector = CIVector(x: 0, y: 0, z: max(0, 1.0 - yellowTintStrength * 2), w: 0)
+        // biasVector で全体に黄みをプラス（R+, G+, B-）
+        tintFilter.biasVector = CIVector(
+            x: yellowTintStrength,
+            y: yellowTintStrength * 0.5,
+            z: 0,
+            w: 0
+        )
+
+        return tintFilter.outputImage ?? bloomedImage
+    }
+
+    // ------------------------------------------------------------------
+    // 網膜色素変性症フィルター（周辺視野の暗化 + トンネル視野）
+    //
+    // 【網膜色素変性症の視覚的特徴】
+    // ・網膜周辺部の光受容細胞（桿体細胞）が先に壊れる
+    // ・周辺視野から徐々に暗くなり（夜盲）、最終的に管状視野になる
+    // ・視野狭窄（緑内障）との違い：より強い暗化、コントラスト低下
+    // ・境界は視野狭窄より鮮明（より「壁」的な暗部）
+    //
+    // 【視野狭窄との実装上の違い】
+    // 視野狭窄（CIVignetteEffect）: 周辺がグレーに暗くなる
+    // 網膜色素変性症:              周辺が真っ黒になる + コントラスト全体低下
+    //
+    // 【実装：2段階】
+    // 1. CIColorControls: コントラスト低下（暗部がより暗くなる）
+    // 2. CIRadialGradient + CIBlendWithMask:
+    //    中心は明るく、周辺は真っ黒のマスクを生成してトンネル視野を表現
+    // ------------------------------------------------------------------
+    private func applyRetinitisFilter(to image: CIImage, intensity: Float) -> CIImage {
+        guard intensity > 0.01 else { return image }
+
+        let width  = image.extent.width
+        let height = image.extent.height
+        let center = CIVector(x: width / 2, y: height / 2)
+
+        // Step 1: コントラスト低下と暗化（網膜の感度低下を表現）
+        // 健常者より全体的にコントラストが落ちて見える
+        let contrastFilter = CIFilter.colorControls()
+        contrastFilter.inputImage  = image
+        contrastFilter.contrast    = mix(1.0, 0.7, t: intensity)
+        contrastFilter.brightness  = mix(0.0, -0.08, t: intensity)  // わずかに暗く
+        contrastFilter.saturation  = mix(1.0, 0.8, t: intensity)    // 色も少し薄れる
+        guard let contrastedImage = contrastFilter.outputImage else { return image }
+
+        // Step 2: 放射状グラデーションマスクで周辺を真っ黒にする
+        //
+        // CIRadialGradient:
+        //   中心から radius0（完全に明るい = 白）まで白
+        //   radius0 から radius1 の間でグラデーション
+        //   radius1 以降は完全に黒 = 視野外
+        //
+        // 視野狭窄と違いグラデーション幅を狭くして「壁」感を出す
+        let shortSide = Float(min(width, height))
+        // 中心の明るい視野の半径
+        // intensity=0.0: 短辺の 65%（広い視野）
+        // intensity=1.0: 短辺の  8%（重度のトンネル視野）
+        let innerRadius = shortSide * mix(0.65, 0.08, t: intensity)
+        // 暗化が完了する外側の半径（内側から短辺の 15% 分でグラデーション）
+        // 視野狭窄より狭いグラデーション幅 = より「壁」的な境界
+        let outerRadius = innerRadius + shortSide * mix(0.25, 0.05, t: intensity)
+
+        // 放射状グラデーション（白→黒）を生成
+        // center, radius0（白の終端）, radius1（黒の始端）を指定
+        let gradientFilter = CIFilter(name: "CIRadialGradient")!
+        gradientFilter.setValue(center,             forKey: "inputCenter")
+        gradientFilter.setValue(innerRadius,        forKey: "inputRadius0")
+        gradientFilter.setValue(outerRadius,        forKey: "inputRadius1")
+        gradientFilter.setValue(CIColor.white,      forKey: "inputColor0")  // 中心：白（視野あり）
+        gradientFilter.setValue(CIColor.black,      forKey: "inputColor1")  // 外周：黒（視野なし）
+        guard let gradientImage = gradientFilter.outputImage else { return contrastedImage }
+
+        // グラデーションを画像サイズにクロップ
+        let mask = gradientImage.cropped(to: image.extent)
+
+        // Step 3: マスクを使って中心は元画像、周辺は黒を合成
+        // CIBlendWithMask: maskImage が白い部分 → inputImage（コントラスト低下画像）
+        //                  maskImage が黒い部分 → backgroundImage（真っ黒）
+        let blackBackground = CIImage(color: CIColor.black).cropped(to: image.extent)
+        let blendFilter = CIFilter(name: "CIBlendWithMask")!
+        blendFilter.setValue(blackBackground,   forKey: kCIInputBackgroundImageKey)
+        blendFilter.setValue(contrastedImage,   forKey: kCIInputImageKey)
+        blendFilter.setValue(mask,              forKey: kCIInputMaskImageKey)
+
+        return blendFilter.outputImage ?? contrastedImage
     }
 
     // ------------------------------------------------------------------

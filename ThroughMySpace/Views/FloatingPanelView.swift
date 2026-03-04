@@ -22,6 +22,11 @@ import SwiftUI
 struct FloatingPanelView: View {
     // AppModel を Binding で受け取る（変更を AppModel に反映させる）
     @Binding var conditionSetting: ConditionSetting
+    // 症状説明（InfoView）の表示フラグ
+    @Binding var showInfo: Bool
+    // パネルの最小化フラグ（true = 最小化されてヘッダーのみ表示）
+    @Binding var isMinimized: Bool
+
     // AppModel 全体（dismissImmersiveSpace に必要）
     @Environment(AppModel.self) private var appModel
     // イマーシブスペースを閉じる環境値
@@ -30,11 +35,9 @@ struct FloatingPanelView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        // パネル本体 + 症状説明カードを縦に並べる
-        VStack(alignment: .leading, spacing: 12) {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 0) {
 
-            // ヘッダー行（タイトル + ホームに戻るボタン）
+            // ヘッダー行（常に表示）
             HStack {
                 Text("症状を選択")
                     .font(.title)
@@ -42,14 +45,40 @@ struct FloatingPanelView: View {
 
                 Spacer()
 
-                // ホームに戻るボタン：
-                // イマーシブスペースを閉じてメインウィンドウを再表示する
+                // 症状説明ボタン（症状選択中のみ有効）
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showInfo.toggle()
+                    }
+                } label: {
+                    Image(systemName: showInfo ? "info.circle.fill" : "info.circle")
+                        .font(.title2)
+                        .foregroundStyle(
+                            conditionSetting.type != .none
+                                ? conditionSetting.type.color
+                                : .secondary
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(conditionSetting.type == .none)
+
+                // 最小化/展開ボタン
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isMinimized.toggle()
+                    }
+                } label: {
+                    Image(systemName: isMinimized ? "chevron.down.circle" : "chevron.up.circle")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+
+                // ホームに戻るボタン
                 Button {
                     Task {
                         await dismissImmersiveSpace()
-                        // イマーシブ解除後にメインウィンドウを開く
                         openWindow(id: appModel.mainWindowID)
-                        // AppModel の状態をリセット（写真選択画面に戻る）
                         appModel.selectedStereoTextures = nil
                         appModel.conditionSetting = ConditionSetting()
                     }
@@ -60,98 +89,102 @@ struct FloatingPanelView: View {
                 .buttonStyle(.bordered)
             }
 
-            // 症状選択ボタン群
-            HStack(spacing: 16) {
-                ForEach(ConditionType.allCases) { conditionType in
-                    ConditionButton(
-                        conditionType: conditionType,
-                        isSelected: conditionSetting.type == conditionType
-                    ) {
-                        conditionSetting.type = conditionType
-                    }
-                }
-            }
+            // 展開時のみ表示するコンテンツ
+            if !isMinimized {
+                VStack(alignment: .leading, spacing: 20) {
+                    Divider()
+                        .padding(.top, 8)
 
-            // 強度スライダー（「症状なし」以外のとき表示）
-            if conditionSetting.type != .none {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("強度")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text("\(Int(conditionSetting.intensity.value * 100))%")
-                            .font(.subheadline)
-                            .monospacedDigit()
-                            .foregroundStyle(.primary)
-                    }
-
-                    // Slider = React Native の Slider コンポーネントに相当
-                    Slider(
-                        value: Binding(
-                            get: { Double(conditionSetting.intensity.value) },
-                            set: { conditionSetting.intensity = ConditionIntensity(Float($0)) }
-                        ),
-                        in: 0.1...1.0,
-                        step: 0.05
-                    )
-                    .tint(conditionSetting.type.color)
-
-                    // 強度プリセットボタン（軽度/中度/重度）
-                    HStack(spacing: 8) {
-                        ForEach(ConditionIntensity.presets, id: \.label) { preset in
-                            Button(preset.label) {
-                                conditionSetting.intensity = ConditionIntensity(preset.value)
+                    // 症状選択ボタン群
+                    HStack(spacing: 16) {
+                        ForEach(ConditionType.allCases) { conditionType in
+                            ConditionButton(
+                                conditionType: conditionType,
+                                isSelected: conditionSetting.type == conditionType
+                            ) {
+                                // 別の症状に切り替えたとき強度を軽度（0.3）にリセット
+                                if conditionSetting.type != conditionType {
+                                    conditionSetting.intensity = ConditionIntensity(0.3)
+                                }
+                                conditionSetting.type = conditionType
+                                // 症状なしに戻したらInfoViewも閉じる
+                                if conditionType == .none {
+                                    showInfo = false
+                                }
                             }
-                            .buttonStyle(.bordered)
-                            .font(.caption)
-                            .tint(
-                                abs(conditionSetting.intensity.value - preset.value) < 0.01
-                                    ? conditionSetting.type.color
-                                    : .secondary
+                        }
+                    }
+
+                    // 強度スライダー（「症状なし」以外のとき表示）
+                    if conditionSetting.type != .none {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("強度")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("\(Int(conditionSetting.intensity.value * 100))%")
+                                    .font(.subheadline)
+                                    .monospacedDigit()
+                                    .foregroundStyle(.primary)
+                            }
+
+                            Slider(
+                                value: Binding(
+                                    get: { Double(conditionSetting.intensity.value) },
+                                    set: { conditionSetting.intensity = ConditionIntensity(Float($0)) }
+                                ),
+                                in: 0.1...1.0,
+                                step: 0.05
                             )
+                            .tint(conditionSetting.type.color)
+
+                            // 強度プリセットボタン（軽度/中度/重度）
+                            HStack(spacing: 8) {
+                                ForEach(ConditionIntensity.presets, id: \.label) { preset in
+                                    Button(preset.label) {
+                                        conditionSetting.intensity = ConditionIntensity(preset.value)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .font(.caption)
+                                    .tint(
+                                        abs(conditionSetting.intensity.value - preset.value) < 0.01
+                                            ? conditionSetting.type.color
+                                            : .secondary
+                                    )
+                                }
+                            }
                         }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+
+                    // 色覚異常タイプ選択（色覚異常選択時のみ表示）
+                    if conditionSetting.type == .colorBlind {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("色覚タイプ")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+
+                            Picker("色覚タイプ", selection: $conditionSetting.colorBlindType) {
+                                ForEach(ColorBlindType.allCases) { type in
+                                    Text(type.title).tag(type)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
-
-            // 色覚異常タイプ選択（色覚異常選択時のみ表示）
-            if conditionSetting.type == .colorBlind {
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("色覚タイプ")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    Picker("色覚タイプ", selection: $conditionSetting.colorBlindType) {
-                        ForEach(ColorBlindType.allCases) { type in
-                            Text(type.title).tag(type)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-
         }
         .padding(32)
         .frame(width: 640)
-        // visionOS のガラス素材（.regularMaterial）を背景に使う
-        // React Native の `backgroundColor: 'rgba(0,0,0,0.5)'` より自然な見た目
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
         .animation(.easeInOut(duration: 0.2), value: conditionSetting.type)
-
-        // 症状説明カード（症状なし以外のとき展開）
-        if conditionSetting.type != .none {
-            InfoView(conditionType: conditionSetting.type)
-                .frame(width: 640)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-        }
-
-        } // 外側VStack終わり
-        .animation(.easeInOut(duration: 0.2), value: conditionSetting.type)
+        .animation(.easeInOut(duration: 0.2), value: isMinimized)
     }
 }
 
@@ -200,6 +233,10 @@ private struct ConditionButton: View {
 }
 
 #Preview {
-    FloatingPanelView(conditionSetting: .constant(ConditionSetting()))
-        .padding()
+    FloatingPanelView(
+        conditionSetting: .constant(ConditionSetting()),
+        showInfo: .constant(false),
+        isMinimized: .constant(false)
+    )
+    .padding()
 }

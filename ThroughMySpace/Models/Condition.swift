@@ -11,18 +11,22 @@ import SwiftUI
 
 // 視覚症状の種類
 enum ConditionType: String, CaseIterable, Identifiable {
-    case none           = "none"            // 症状なし（元の空間写真）
-    case visualField    = "visualField"     // 視野狭窄（緑内障など）
-    case colorBlind     = "colorBlind"      // 色覚異常
+    case none                 = "none"                 // 症状なし（元の空間写真）
+    case visualField          = "visualField"          // 視野狭窄（緑内障など）
+    case colorBlind           = "colorBlind"           // 色覚異常
+    case cataract             = "cataract"             // 白内障（水晶体の混濁）
+    case retinitispigmentosa  = "retinitispigmentosa"  // 網膜色素変性症（周辺から視野が失われる）
 
     var id: String { rawValue }
 
     // 表示名
     var title: String {
         switch self {
-        case .none:        return "症状なし"
-        case .visualField: return "視野狭窄"
-        case .colorBlind:  return "色覚異常"
+        case .none:                return "症状なし"
+        case .visualField:         return "視野狭窄"
+        case .colorBlind:          return "色覚異常"
+        case .cataract:            return "白内障"
+        case .retinitispigmentosa: return "網膜色素変性症"
         }
     }
 
@@ -35,6 +39,10 @@ enum ConditionType: String, CaseIterable, Identifiable {
             return "緑内障などで起こる周辺視野の欠損を体験します"
         case .colorBlind:
             return "色の見え方の違いを体験します"
+        case .cataract:
+            return "水晶体が濁り、光がぼやけて見える状態を体験します"
+        case .retinitispigmentosa:
+            return "周辺視野から徐々に失われ、トンネル視野になる状態を体験します"
         }
     }
 
@@ -62,24 +70,48 @@ enum ConditionType: String, CaseIterable, Identifiable {
                 似た色に見えるタイプが最も多く、\
                 日本では男性の約5%に見られます。
                 """
+        case .cataract:
+            return """
+                目の水晶体が白く濁り、\
+                光が散乱してぼやけて見える病気です。
+
+                加齢が主な原因で、\
+                60歳以上の約70%に見られます。
+                光源周辺に光の輪（ハロー）が\
+                見えることも特徴のひとつです。
+                """
+        case .retinitispigmentosa:
+            return """
+                網膜の光受容細胞が\
+                徐々に壊れていく遺伝性の病気です。
+
+                夜盲（暗い場所で見えにくい）から始まり、\
+                周辺視野がゆっくりと失われていきます。
+                日本の患者数は約3万人。
+                現在、根本的な治療法はありません。
+                """
         }
     }
 
     // SF Symbols アイコン名
     var iconName: String {
         switch self {
-        case .none:        return "eye"
-        case .visualField: return "circle.dashed"
-        case .colorBlind:  return "paintpalette"
+        case .none:                return "eye"
+        case .visualField:         return "circle.dashed"
+        case .colorBlind:          return "paintpalette"
+        case .cataract:            return "sun.max"
+        case .retinitispigmentosa: return "circle.dotted"
         }
     }
 
     // テーマカラー
     var color: Color {
         switch self {
-        case .none:        return .blue
-        case .visualField: return .orange
-        case .colorBlind:  return .purple
+        case .none:                return .blue
+        case .visualField:         return .orange
+        case .colorBlind:          return .purple
+        case .cataract:            return .yellow
+        case .retinitispigmentosa: return .gray
         }
     }
 }
