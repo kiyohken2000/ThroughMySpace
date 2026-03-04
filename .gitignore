@@ -1,0 +1,17 @@
+# スクリーンショット等の一時ファイル
+**/_temp/
+
+# Xcode
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+DerivedData/
+*.moved-aside
+*.hmap
+
+# Swift Package Manager
+.build/
+.swiftpm/xcode/
+
+# macOS
+.DS_Store
