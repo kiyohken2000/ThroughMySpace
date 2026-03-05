@@ -72,7 +72,7 @@ Through My Space は、自分の部屋・職場・日常の空間を撮影した
 黄斑変性などで中心視野が欠ける状態を体験します。視線を向けた先がぼやけて見えなくなるため、読書や顔の認識が困難になります。
 
 ■ 飛蚊症
-硝子体の混濁により、視界に糸や点が浮遊して見える状態を体験します。明るい背景を見たときに特に目立ちます。ゴマ状・虫状・カエルの卵状の3タイプを選べます。
+硝子体の混濁により、視界に糸や点が浮遊して見える状態を体験します。明るい背景を見たときに特に目立ちます。
 
 ─────────────────────────
 使い方
@@ -148,7 +148,7 @@ Experience light and edges appearing blurred in a specific direction due to irre
 Experience the loss of central vision as seen in macular degeneration. Makes reading and recognizing faces difficult.
 
 ■ Floaters
-Experience the shadows cast by vitreous debris drifting across your field of vision. Most noticeable against bright, uniform backgrounds. Choose from three shape types: sesame, worm, or frog eggs.
+Experience the shadows cast by vitreous debris drifting across your field of vision. Most noticeable against bright, uniform backgrounds.
 
 ─────────────────────────
 How to Use
@@ -205,7 +205,7 @@ https://kiyohken2000.github.io/ThroughMySpace/support.html
 ```
 This app simulates visual conditions using spatial photos on Apple Vision Pro.
 
-Implemented conditions: glaucoma (visual field loss), color vision deficiency (3 types), cataracts (with bloom effect), retinitis pigmentosa, presbyopia, astigmatism, central scotoma (head-tracking based), and floaters (head-tracking based, with 3 shape types: sesame / worm / frog eggs).
+Implemented conditions: glaucoma (visual field loss), color vision deficiency (3 types), cataracts (with bloom effect), retinitis pigmentosa, presbyopia, astigmatism, central scotoma (head-tracking based), and floaters (head-tracking based).
 
 The app requires a spatial photo from the user's photo library to function. A standard HEIC photo is also accepted for testing purposes.
 

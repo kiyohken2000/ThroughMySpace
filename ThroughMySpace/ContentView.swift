@@ -156,6 +156,9 @@ struct ContentView: View {
             // 写真選びのヒント
             PhotoTipsView()
 
+            // 空間写真の必要条件の注意書き
+            PhotoRequirementView()
+
             // 空間写真の選択ボタン
             // タップすると SpatialPhotoPicker (PHPickerViewController) がシートで開く
             // selection = .continuous により写真タップで即確定（確定ボタン不要）
@@ -354,6 +357,38 @@ private struct TipCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// ------------------------------------------------------------------
+// 空間写真の必要条件を示す注意書き
+// ボタンを押す前にユーザーが空間写真を持っているか確認できるよう表示する
+// ------------------------------------------------------------------
+struct PhotoRequirementView: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "camera.aperture")
+                .foregroundStyle(.blue)
+                .font(.subheadline)
+                .frame(width: 18)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("photo.requirement.title", tableName: "Localizable")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Text("photo.requirement.body", tableName: "Localizable")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(.blue.opacity(0.25), lineWidth: 1)
+        )
     }
 }
 

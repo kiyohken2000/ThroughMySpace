@@ -8,6 +8,8 @@
 "disclaimer.short" = "このアプリが提供する体験は近似的なシミュレーションです。\n実際の視覚症状は個人差があります。\n医療診断・治療の代替として使用しないでください。";
 "alert.error.title" = "エラー";
 "alert.error.unknown" = "不明なエラーが発生しました";
+"photo.requirement.title" = "使用できる写真について";
+"photo.requirement.body" = "このアプリはApple Vision ProまたはiPhone（Pro以降）で撮影した「空間写真」が必要です。通常の写真は使用できません。";
 "tipsView.header" = "より体験が伝わる写真を選ぶには";
 "badge.comingSoon" = "追加予定";
 
@@ -73,12 +75,6 @@
 "condition.astigmatism.detail" = "角膜や水晶体のゆがみにより、光が一点に集まらず特定方向にブレて見える状態です。\n\n軽度の乱視は多くの人に見られます。夜間や暗い環境で光がにじんで見えることが特徴です。\n眼鏡・コンタクトで矯正できますが、未矯正だと目の疲れの原因になります。";
 "condition.scotoma.detail" = "黄斑変性などで中心視野が失われる状態です。\n\n視線を向けた先がぼやけたり、暗く欠けて見えるため、読書・顔の認識・細かい作業が困難になります。\n加齢黄斑変性は日本の視覚障害原因の上位に挙がる病気です。";
 "condition.floaters.detail" = "硝子体（目の中のゼリー状組織）の混濁により、視界に糸・点・輪のような影が浮かんで見える状態です。\n\n明るい背景を見たとき特に目立ちます。多くは加齢による生理的なものですが、急に増えた場合は網膜剥離の初期症状のこともあります。";
-
-// ----- FloatersType.title -----
-"floaters.granular" = "ゴマ状";
-"floaters.worm"     = "虫状";
-"floaters.egg"      = "カエルの卵状";
-"panel.floatersType" = "形状";
 
 // ----- ColorBlindType.title -----
 "colorBlind.deuteranopia" = "2型色覚（緑弱）";

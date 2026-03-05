@@ -8,6 +8,8 @@
 "disclaimer.short" = "This app provides approximate simulations only.\nActual visual conditions vary between individuals.\nDo not use as a substitute for medical diagnosis or treatment.";
 "alert.error.title" = "Error";
 "alert.error.unknown" = "An unknown error occurred";
+"photo.requirement.title" = "Photo requirements";
+"photo.requirement.body" = "This app requires a spatial photo taken with Apple Vision Pro or an iPhone (Pro or later). Standard photos cannot be used.";
 "tipsView.header" = "Tips for choosing the best photo";
 "badge.comingSoon" = "Coming Soon";
 
@@ -79,12 +81,6 @@
 // ----- ConditionType.detailDescription (scotoma / floaters) -----
 "condition.scotoma.detail" = "A condition caused by macular degeneration, where the center of the visual field is lost.\n\nThe area you look directly at becomes blurred or dark, making reading, recognizing faces, and fine detail work difficult.\nAge-related macular degeneration is a leading cause of visual impairment in Japan.";
 "condition.floaters.detail" = "Shadows cast by debris in the vitreous humor, the gel-like substance filling the eye.\n\nAppear as threads, dots, or rings drifting across your field of vision. Most noticeable against bright, uniform backgrounds.\nUsually harmless with age, but a sudden increase may indicate retinal detachment.";
-
-// ----- FloatersType.title -----
-"floaters.granular" = "Sesame";
-"floaters.worm"     = "Worm";
-"floaters.egg"      = "Frog Eggs";
-"panel.floatersType" = "Shape";
 
 // ----- ColorBlindType.title -----
 "colorBlind.deuteranopia" = "Type 2 (Green Weak)";

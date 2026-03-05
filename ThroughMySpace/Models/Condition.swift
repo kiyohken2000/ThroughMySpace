@@ -125,25 +125,6 @@ struct ConditionSetting: Equatable {
     // 色覚異常のサブタイプ
     var colorBlindType: ColorBlindType = .deuteranopia
 
-    // 飛蚊症の形状タイプ
-    var floatersType: FloatersType = .granular
-}
-
-// 飛蚊症の形状タイプ
-enum FloatersType: String, CaseIterable, Identifiable {
-    case granular = "granular"  // ゴマ状（小さな点）
-    case worm     = "worm"      // 虫状（細長い楕円）
-    case egg      = "egg"       // カエルの卵状（輪っか・ドーナツ形）
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .granular: return String(localized: "floaters.granular")
-        case .worm:     return String(localized: "floaters.worm")
-        case .egg:      return String(localized: "floaters.egg")
-        }
-    }
 }
 
 // 色覚異常のタイプ（Brettel 1997 に基づく分類）

@@ -60,7 +60,7 @@ struct ImmersiveView: View {
     @State private var filterTask: Task<Void, Never>? = nil
 
     // ------------------------------------------------------------------
-    // ARKit セッション（アイトラッキング用）
+    // ARKit セッション（ヘッドトラッキング用）
     //
     // WorldTrackingProvider でヘッドの向きを毎フレーム取得する。
     // visionOS の Full Immersive Space では追加権限なしで利用できる。
@@ -70,6 +70,33 @@ struct ImmersiveView: View {
     // ------------------------------------------------------------------
     @State private var arkitSession   = ARKitSession()
     @State private var worldTracking  = WorldTrackingProvider()
+
+    // ------------------------------------------------------------------
+    // Entity オーバーレイ方式（中心暗点・飛蚊症）
+    //
+    // Core Image フィルターは毎フレームのテクスチャ再生成が必要で重すぎる。
+    // 代わりに RealityKit の ModelEntity をドームの球面上に配置し、
+    // ヘッドの向きに応じて毎フレーム position を更新するだけで対応する。
+    // テクスチャは起動時に一度だけ生成する（ゴマ状・虫状・卵状も含む）。
+    // ------------------------------------------------------------------
+
+    /// 中心暗点オーバーレイ（単一の黒円）
+    @State private var scotomaEntity: ModelEntity? = nil
+
+    /// 飛蚊症オーバーレイ（ゴマ状のみ）
+    @State private var floaterEntitiesByType: [[ModelEntity]] = []
+
+    /// 現在表示中の飛蚊症タイプのEntityリスト（更新の便利のため）
+    @State private var floaterEntities: [ModelEntity] = []
+
+    /// ドームの半径（makeContentと同じ値）
+    private let domeRadius: Float = 3.0
+
+    /// Entity をヘッドの前方に配置する距離。
+    /// ドーム半径(3.0m)より大幅に手前にすることで：
+    /// 1. ドームメッシュとの交差・クリッピングを防ぐ
+    /// 2. 上/下/横など任意の向きでもドーム範囲外に出ず常に見える
+    private let overlayDistance: Float = 1.5
 
     var body: some View {
         RealityView { content, attachments in
@@ -86,6 +113,21 @@ struct ImmersiveView: View {
             await applyMaterial(to: dome,
                                 textures: appModel.selectedStereoTextures,
                                 setting: appModel.conditionSetting)
+
+            // MARK: 中心暗点オーバーレイ Entity（初期は非表示）
+            let scotoma = makeScotomaEntity()
+            scotoma.isEnabled = false
+            content.add(scotoma)
+            scotomaEntity = scotoma
+
+            // MARK: 飛蚊症オーバーレイ Entity（ゴマ状のみ、初期は非表示）
+            let granularEntities = makeFloaterEntities()
+            for e in granularEntities {
+                e.isEnabled = false
+                content.add(e)
+            }
+            floaterEntitiesByType = [granularEntities]
+            floaterEntities = granularEntities
 
             // MARK: フローティングパネルを 3D 空間に配置
             // 少し上（y=0.6）・正面方向（z=-1.2）に浮かせる
@@ -150,19 +192,6 @@ struct ImmersiveView: View {
         .task {
             await startARKitTracking()
         }
-        // 視線位置が更新されたとき：中心暗点・飛蚊症フィルターを再適用
-        // 他の症状では視線追跡が不要なので、条件を絞ってパフォーマンスを守る
-        .onChange(of: appModel.gazeNormalized) { _, _ in
-            let type = appModel.conditionSetting.type
-            guard type == .scotoma || type == .floaters else { return }
-            guard let dome = domeEntity else { return }
-            filterTask?.cancel()
-            filterTask = Task { @MainActor in
-                await applyMaterial(to: dome,
-                                    textures: appModel.selectedStereoTextures,
-                                    setting: appModel.conditionSetting)
-            }
-        }
         // 写真が変わったとき：CGImageキャッシュをクリアして再抽出
         .onChange(of: appModel.textureVersion) { _, _ in
             sourceCGImage = nil  // キャッシュをクリア
@@ -175,7 +204,46 @@ struct ImmersiveView: View {
             }
         }
         // 症状設定が変わったとき：保存済み CGImage にフィルターをかけ直す
-        .onChange(of: appModel.conditionSetting) { _, newSetting in
+        .onChange(of: appModel.conditionSetting) { oldSetting, newSetting in
+            // ──────────────────────────────────────────────
+            // Entity オーバーレイ（中心暗点・飛蚊症）の表示切り替え
+            // ──────────────────────────────────────────────
+            let isScotoma   = (newSetting.type == .scotoma)
+            let isFloaters  = (newSetting.type == .floaters)
+
+            // 中心暗点：表示/非表示 + intensity に応じたスケール更新
+            // ベースサイズ 0.6m（overlayDistance=1.5m 基準）
+            // intensity=0（軽度）: スケール 0.6 → 0.36m（小さな暗点）
+            // intensity=1（重度）: スケール 2.2 → 1.32m（広い暗点）
+            if let scotoma = scotomaEntity {
+                scotoma.isEnabled = isScotoma
+                if isScotoma {
+                    let scotomaScale = mix(0.6, 2.2, t: newSetting.intensity.value)
+                    scotoma.scale = SIMD3<Float>(scotomaScale, scotomaScale, scotomaScale)
+                }
+            }
+
+            // 飛蚊症（ゴマ状）の表示・非表示と intensity によるスケール更新
+            // intensity に応じてスケールを変化させる：
+            //   軽度（0.0）: scale 0.5 → 小さく薄く見える
+            //   重度（1.0）: scale 1.8 → 大きくはっきり見える
+            if isFloaters {
+                let floaterScale = mix(0.5, 1.8, t: newSetting.intensity.value)
+                let entities = floaterEntitiesByType.first ?? []
+                for e in entities {
+                    e.isEnabled = true
+                    e.scale = SIMD3<Float>(floaterScale, floaterScale, floaterScale)
+                }
+                floaterEntities = entities
+            } else {
+                // 飛蚊症 Entity を非表示
+                for entities in floaterEntitiesByType {
+                    for e in entities { e.isEnabled = false }
+                }
+                floaterEntities = []
+            }
+
+            // ドームの CI フィルター再適用（中心暗点・飛蚊症はドームに何もしない）
             guard let dome = domeEntity else { return }
             // 前のタスクをキャンセル（スライダー連打対策）
             filterTask?.cancel()
@@ -304,19 +372,12 @@ struct ImmersiveView: View {
             filteredCI = applyAstigmatismFilter(to: ciImage, intensity: setting.intensity.value)
 
         case .scotoma:
-            filteredCI = applyScotomaFilter(
-                to: ciImage,
-                intensity: setting.intensity.value,
-                center: appModel.gazeNormalized
-            )
+            // Entity オーバーレイ方式で実装するため、ドームには何もしない
+            filteredCI = ciImage
 
         case .floaters:
-            filteredCI = applyFloatersFilter(
-                to: ciImage,
-                intensity: setting.intensity.value,
-                center: appModel.gazeNormalized,
-                floatersType: setting.floatersType
-            )
+            // Entity オーバーレイ方式で実装するため、ドームには何もしない
+            filteredCI = ciImage
         }
 
         // キャンセルチェック（重い処理の後）
@@ -841,21 +902,17 @@ struct ImmersiveView: View {
     // ------------------------------------------------------------------
     // ARKit ワールドトラッキング開始
     //
-    // WorldTrackingProvider を使ってヘッドの向きを毎フレーム取得し、
-    // ドームのUV座標（視線の正規化位置）に変換して AppModel に保存する。
+    // ヘッドの向きを毎フレーム取得し、中心暗点・飛蚊症の
+    // Entity の位置を球面上でリアルタイム更新する。
     //
-    // 【変換の仕組み】
-    // DeviceAnchor.originFromAnchorTransform は 4x4 行列。
-    // 3列目（columns.2）は「Z軸の向き」= ヘッドの「後ろ方向」。
-    // ヘッドの「前方向」は -Z なので、columns.2 に -1 をかける。
+    // 【Entity 方式の利点】
+    // CI フィルター方式は毎フレームのテクスチャ再生成（GPU → CPU → テクスチャ）が
+    // 必要で実質リアルタイム追従不可能だった。
+    // Entity 方式は position の更新だけなので 60fps で追従できる。
     //
-    // その前方ベクトル (x, y, z) をドームのUV座標に変換：
-    //   u = 0.5 + atan2(x, -z) / (2π)
-    //   v = 0.5 - asin(y) / π
-    //
-    // 【スムージング】
-    // 生の視線をそのまま使うと中心暗点が震えて見える。
-    // 前フレームの値と lerp でスムージングする（α = 0.15）。
+    // 【スムージング（lerp α = 0.15）】
+    // 生の視線をそのまま使うと Entity が震えて見える。
+    // 前フレームの forward ベクトルと lerp でスムージングする。
     // ------------------------------------------------------------------
     @MainActor
     private func startARKitTracking() async {
@@ -867,33 +924,72 @@ struct ImmersiveView: View {
             return
         }
 
-        // 毎フレーム（約 60fps）ヘッドの向きを取得してガze位置を更新
-        // Task.sleep で 16ms（約 60fps）間隔でポーリングする
+        // スムージング用の前フレーム forward ベクトル
+        var smoothedForward = SIMD3<Float>(0, 0, -1)  // 初期値：正面
+
+        // 飛蚊症用：さらに遅いスムージング
+        // 実際の飛蚊症は硝子体の慣性で視線より遅れて動く。
+        // α=0.04 にすることで約0.5秒遅れて追従する。
+        var floatersForward = SIMD3<Float>(0, 0, -1)
+
+        // 毎フレーム（約 60fps）ヘッドの向きを取得して Entity 位置を更新
         while !Task.isCancelled {
-            // 現在のタイムスタンプでデバイスアンカーを取得
             if let anchor = worldTracking.queryDeviceAnchor(atTimestamp: CACurrentMediaTime()) {
                 let matrix = anchor.originFromAnchorTransform
 
                 // ヘッドの前方ベクトル（-Z 軸）を抽出
-                // columns.2 は Z 軸の向き（後ろ向き）なので符号を反転
-                let forward = SIMD3<Float>(
+                let rawForward = SIMD3<Float>(
                     -matrix.columns.2.x,
                     -matrix.columns.2.y,
                     -matrix.columns.2.z
                 )
 
-                // 球面上のUV座標に変換（0.0〜1.0 の正規化座標）
-                // u: 水平方向（左右）= atan2(x, -z) / (2π) + 0.5
-                // v: 垂直方向（上下）= 0.5 - asin(y) / π
-                let u = 0.5 + atan2f(forward.x, -forward.z) / (2.0 * Float.pi)
-                let v = 0.5 - asinf(max(-1.0, min(1.0, forward.y))) / Float.pi
-                let rawGaze = SIMD2<Float>(u, v)
+                // 中心暗点用スムージング（α = 0.15）
+                smoothedForward = smoothedForward + (rawForward - smoothedForward) * 0.15
+                let len1 = simd_length(smoothedForward)
+                if len1 > 0.001 { smoothedForward = smoothedForward / len1 }
 
-                // スムージング（lerp α = 0.15）
-                // 急な動きは追従しすぎず、緩やかな動きはスムーズに追う
-                let alpha: Float = 0.15
-                let smoothed = mix(appModel.gazeNormalized, rawGaze, t: alpha)
-                appModel.gazeNormalized = smoothed
+                // 飛蚊症用スムージング（α = 0.04：ゆっくり追従して慣性感を出す）
+                floatersForward = floatersForward + (rawForward - floatersForward) * 0.04
+                let len2 = simd_length(floatersForward)
+                if len2 > 0.001 { floatersForward = floatersForward / len2 }
+
+                // ヘッドの位置（ワールド座標）
+                // Vision Pro では原点はフロアレベル付近、ヘッドは約1.6m上にある。
+                // Entity をワールド原点基準で配置すると視線からずれるため、
+                // ヘッドの実際の位置を基準にして forward 方向に配置する。
+                let headPos = SIMD3<Float>(matrix.columns.3.x,
+                                          matrix.columns.3.y,
+                                          matrix.columns.3.z)
+
+                // ヘッドの right/up ベクトル（飛蚊症オフセット計算用）
+                let right = SIMD3<Float>(matrix.columns.0.x, matrix.columns.0.y, matrix.columns.0.z)
+                let up    = SIMD3<Float>(matrix.columns.1.x, matrix.columns.1.y, matrix.columns.1.z)
+
+                // 中心暗点 Entity の位置更新
+                // ヘッド位置 + smoothedForward 方向の overlayDistance に配置してから
+                // look(at: headPos) でヘッド位置を向かせる（ビルボード的動作）
+                // generatePlane(width:height:) の法線は +Z なので
+                // look(at:from:relativeTo:) で -Z をヘッド方向に向けることで正面を向く
+                if let scotoma = scotomaEntity, scotoma.isEnabled {
+                    let scotomaPos = headPos + smoothedForward * overlayDistance
+                    scotoma.position = scotomaPos
+                    scotoma.look(at: headPos, from: scotomaPos, relativeTo: nil)
+                }
+
+                // 飛蚊症 Entity の位置更新（遅延追従）
+                // ヘッドの right/up を使って視野内に分散配置する
+                if !floaterEntities.isEmpty && floaterEntities[0].isEnabled {
+                    for entity in floaterEntities {
+                        if let offset = entity.components[FloaterOffsetComponent.self] {
+                            let worldPos = headPos
+                                + floatersForward * overlayDistance
+                                + right * offset.horizontal
+                                + up    * offset.vertical
+                            entity.position = worldPos
+                        }
+                    }
+                }
             }
 
             // 約 60fps でポーリング（16ms）
@@ -902,332 +998,129 @@ struct ImmersiveView: View {
     }
 
     // ------------------------------------------------------------------
-    // 中心暗点フィルター（黄斑変性などで中心視野が欠けた状態）
+    // 飛蚊症 Entity のオフセット情報を保持するカスタムコンポーネント
     //
-    // 【中心暗点の視覚的特徴】
-    // ・視線の中心（fovea）が欠けて見えなくなる
-    // ・欠けた部分は暗く（または無）なり、周辺視野は保たれる
-    // ・視線を向けた先が「消える」ため、読書や顔認識が困難
-    //
-    // 【アイトラッキング連動】
-    // center パラメータが視線の正規化UV座標 (0.0〜1.0)。
-    // (0.5, 0.5) = 画像中央 = まっすぐ前を見ているとき。
-    //
-    // 【実装】
-    // CIRadialGradient でマスクを生成：
-    //   中心（視線位置）は黒（視野なし）、外側は白（視野あり）
-    // CIBlendWithMask で元画像と黒背景を合成する。
+    // RealityKit の Component プロトコルを実装することで
+    // Entity にカスタムデータを添付できる。
+    // React Native の props に相当するイメージ。
     // ------------------------------------------------------------------
-    private func applyScotomaFilter(
-        to image: CIImage,
-        intensity: Float,
-        center: SIMD2<Float>
-    ) -> CIImage {
-        guard intensity > 0.01 else { return image }
-
-        let width  = image.extent.width
-        let height = image.extent.height
-
-        // 視線位置をピクセル座標に変換
-        // CIImage の座標は左下原点なので Y を反転する
-        let cx = CGFloat(center.x) * width
-        let cy = (1.0 - CGFloat(center.y)) * height
-        let ciCenter = CIVector(x: cx, y: cy)
-
-        let shortSide = Float(min(width, height))
-
-        // 中心の「見えない領域」の半径
-        // intensity=0.0（最小）: 短辺の 5%（わずかなぼやけ）
-        // intensity=1.0（最大）: 短辺の 25%（重度の中心暗点）
-        let innerRadius = shortSide * mix(0.05, 0.25, t: intensity)
-        // 暗化が完了する外側の半径（なだらかなグラデーション境界）
-        let outerRadius = innerRadius + shortSide * 0.10
-
-        // 放射状グラデーション：中心 = 黒（視野なし）、外側 = 白（視野あり）
-        // ※ 通常の視野狭窄と逆（内側が黒）
-        let gradientFilter = CIFilter(name: "CIRadialGradient")!
-        gradientFilter.setValue(ciCenter,       forKey: "inputCenter")
-        gradientFilter.setValue(innerRadius,    forKey: "inputRadius0")
-        gradientFilter.setValue(outerRadius,    forKey: "inputRadius1")
-        gradientFilter.setValue(CIColor.black,  forKey: "inputColor0")  // 中心：黒（見えない）
-        gradientFilter.setValue(CIColor.white,  forKey: "inputColor1")  // 外周：白（見える）
-        guard let gradientImage = gradientFilter.outputImage else { return image }
-
-        let mask = gradientImage.cropped(to: image.extent)
-
-        // マスクを使って中心は黒、周辺は元画像を表示
-        let blackBackground = CIImage(color: CIColor.black).cropped(to: image.extent)
-        let blendFilter = CIFilter(name: "CIBlendWithMask")!
-        blendFilter.setValue(blackBackground, forKey: kCIInputBackgroundImageKey)
-        blendFilter.setValue(image,           forKey: kCIInputImageKey)
-        blendFilter.setValue(mask,            forKey: kCIInputMaskImageKey)
-
-        return blendFilter.outputImage ?? image
+    struct FloaterOffsetComponent: Component {
+        var horizontal: Float  // カメラ座標系での水平オフセット（メートル）
+        var vertical: Float    // カメラ座標系での垂直オフセット（メートル）
     }
 
     // ------------------------------------------------------------------
-    // 飛蚊症フィルター（硝子体の混濁による影）
+    // 中心暗点 Entity を生成する
     //
-    // 【飛蚊症の視覚的特徴】
-    // ・視界に糸状・点状・輪状の半透明な影が浮いて見える
-    // ・視線を動かすと少し遅れて動く（硝子体と一緒に揺れる）
-    // ・明るい均一な背景（空・白壁）で特に目立つ
-    // ・加齢や近視が原因のことが多い
+    // 【方式】
+    // generatePlane(width:height:) を使う。この平面は XY 平面で法線が +Z 軸。
+    // startARKitTracking 内で毎フレーム entity.look(at: headPos, ...) を呼ぶことで
+    // 平面が常にユーザーの方向を向く（ビルボード的動作）。
     //
-    // 【アイトラッキング連動】
-    // center パラメータを基準に影の位置を決定する。
-    // 視線が動くと影もゆっくり追従する（スムージングは AppModel 側）。
-    //
-    // 【実装】
-    // CIRadialGradient で複数の半透明な楕円形の影を生成し、
-    // CISourceOverCompositing で元画像に重ねる。
-    // 影の位置は center からのオフセットで決まる（固定シード）。
+    // テクスチャ：中心が黒不透明、外縁が透明のグラデーション円。
+    // 実際の中心暗点は境界がはっきりしておらず、中心から外側にフェードする。
     // ------------------------------------------------------------------
-    private func applyFloatersFilter(
-        to image: CIImage,
-        intensity: Float,
-        center: SIMD2<Float>,
-        floatersType: FloatersType = .granular
-    ) -> CIImage {
-        guard intensity > 0.01 else { return image }
-
-        let width     = image.extent.width
-        let height    = image.extent.height
-        let shortSide = Float(min(width, height))
-
-        // intensity に応じてサイズ・濃さをスケール
-        let sizeScale  = mix(0.6, 1.4, t: intensity)
-        let alphaScale = mix(0.4, 1.0, t: intensity)
-
-        // 透明な重ね合わせベース画像
-        var overlayImage = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0))
-            .cropped(to: image.extent)
-
-        switch floatersType {
-
-        // ------------------------------------------------------------------
-        // ゴマ状：小さな丸い点が複数浮かぶ
-        // 硝子体の変性による微細な混濁。最も一般的な飛蚊症。
-        // ------------------------------------------------------------------
-        case .granular:
-            // (offsetX, offsetY, radiusScale, alpha)
-            let defs: [(Float, Float, Float, Float)] = [
-                ( 0.04,  0.07, 0.018, 0.55),
-                (-0.09,  0.02, 0.013, 0.45),
-                ( 0.12, -0.05, 0.016, 0.50),
-                (-0.03,  0.13, 0.011, 0.40),
-                ( 0.06, -0.11, 0.015, 0.48),
-                (-0.14,  0.09, 0.012, 0.42),
-                ( 0.09,  0.16, 0.010, 0.38),
-            ]
-            for (ox, oy, rs, a) in defs {
-                let fx     = CGFloat(center.x + ox) * width
-                let fy     = (1.0 - CGFloat(center.y + oy)) * height
-                let r      = CGFloat(shortSide) * CGFloat(rs * sizeScale)
-                let alpha  = CGFloat(min(1.0, a * alphaScale))
-                overlayImage = addCircleSpot(
-                    to: overlayImage, extent: image.extent,
-                    cx: fx, cy: fy,
-                    innerRadius: r, outerRadius: r * 1.5,
-                    alpha: alpha
-                )
-            }
-
-        // ------------------------------------------------------------------
-        // 虫状：横長の楕円が数個浮かぶ
-        // CGContext でベジェ楕円を描き、CIImage に変換して重ねる。
-        // CIRadialGradient は真円のみなので CGContext を使う必要がある。
-        // ------------------------------------------------------------------
-        case .worm:
-            let defs: [(ox: Float, oy: Float, wScale: Float, hScale: Float, angle: Double, alpha: Float)] = [
-                ( 0.05,  0.07, 0.10, 0.025, -15, 0.58),
-                (-0.10,  0.03, 0.08, 0.020,  20, 0.48),
-                ( 0.12, -0.06, 0.09, 0.022,  -5, 0.52),
-                (-0.04,  0.14, 0.07, 0.018,  30, 0.44),
-            ]
-            for def in defs {
-                let cx    = CGFloat(center.x + def.ox) * width
-                let cy    = (1.0 - CGFloat(center.y + def.oy)) * height
-                let w     = CGFloat(shortSide) * CGFloat(def.wScale * sizeScale)
-                let h     = CGFloat(shortSide) * CGFloat(def.hScale * sizeScale)
-                let alpha = CGFloat(min(1.0, def.alpha * alphaScale))
-                if let ciEllipse = makeEllipseCIImage(
-                    extent: image.extent,
-                    cx: cx, cy: cy, w: w, h: h,
-                    angleDeg: def.angle, alpha: alpha
-                ) {
-                    overlayImage = composite(ciEllipse, over: overlayImage)
-                }
-            }
-
-        // ------------------------------------------------------------------
-        // カエルの卵状：輪っか（ドーナツ形）が浮かぶ
-        // 外側の円から内側の透明円を引いてリング形状を作る。
-        // CIRadialGradient の color0（内側）を透明にすると実現できる。
-        // ------------------------------------------------------------------
-        case .egg:
-            let defs: [(Float, Float, Float, Float)] = [
-                ( 0.05,  0.08, 0.040, 0.55),
-                (-0.11,  0.04, 0.030, 0.48),
-                ( 0.13, -0.07, 0.035, 0.52),
-                (-0.03,  0.16, 0.025, 0.42),
-            ]
-            for (ox, oy, rs, a) in defs {
-                let fx    = CGFloat(center.x + ox) * width
-                let fy    = (1.0 - CGFloat(center.y + oy)) * height
-                let outer = CGFloat(shortSide) * CGFloat(rs * sizeScale)
-                let inner = outer * 0.55  // リングの穴のサイズ（55%）
-                let alpha = CGFloat(min(1.0, a * alphaScale))
-                overlayImage = addRingSpot(
-                    to: overlayImage, extent: image.extent,
-                    cx: fx, cy: fy,
-                    innerHoleRadius: inner,
-                    ringOuterRadius: outer,
-                    edgeFade: outer * 0.15,
-                    alpha: alpha
-                )
-            }
-        }
-
-        // 影レイヤーを元画像の上に重ねる
-        return composite(overlayImage, over: image)
-    }
-
-    // ------------------------------------------------------------------
-    // ヘルパー：円形スポット（ゴマ状用）
-    // CIRadialGradient で内側が濃く外側が透明になる円を生成する
-    // ------------------------------------------------------------------
-    private func addCircleSpot(
-        to base: CIImage, extent: CGRect,
-        cx: CGFloat, cy: CGFloat,
-        innerRadius: CGFloat, outerRadius: CGFloat,
-        alpha: CGFloat
-    ) -> CIImage {
-        let f = CIFilter(name: "CIRadialGradient")!
-        f.setValue(CIVector(x: cx, y: cy), forKey: "inputCenter")
-        f.setValue(innerRadius,            forKey: "inputRadius0")
-        f.setValue(outerRadius,            forKey: "inputRadius1")
-        f.setValue(CIColor(red: 0.15, green: 0.15, blue: 0.15, alpha: alpha),
-                   forKey: "inputColor0")
-        f.setValue(CIColor(red: 0, green: 0, blue: 0, alpha: 0),
-                   forKey: "inputColor1")
-        guard let spot = f.outputImage?.cropped(to: extent) else { return base }
-        return composite(spot, over: base)
-    }
-
-    // ------------------------------------------------------------------
-    // ヘルパー：リング形状（カエルの卵状用）
-    // 2つの CIRadialGradient を組み合わせてドーナツ形を作る。
-    // 外側グラデーション（輪の外縁）から内側穴（透明）を CIBlendWithMask で切り抜く。
-    // ------------------------------------------------------------------
-    private func addRingSpot(
-        to base: CIImage, extent: CGRect,
-        cx: CGFloat, cy: CGFloat,
-        innerHoleRadius: CGFloat,   // 穴の半径
-        ringOuterRadius: CGFloat,   // 輪の外縁半径
-        edgeFade: CGFloat,          // 外縁のフェード幅
-        alpha: CGFloat
-    ) -> CIImage {
-        let center = CIVector(x: cx, y: cy)
-
-        // 輪本体（外縁グラデーション）：外側が透明、内側が濃い
-        let outerF = CIFilter(name: "CIRadialGradient")!
-        outerF.setValue(center,            forKey: "inputCenter")
-        outerF.setValue(ringOuterRadius - edgeFade, forKey: "inputRadius0")
-        outerF.setValue(ringOuterRadius,   forKey: "inputRadius1")
-        outerF.setValue(CIColor(red: 0.15, green: 0.15, blue: 0.15, alpha: alpha),
-                        forKey: "inputColor0")
-        outerF.setValue(CIColor(red: 0, green: 0, blue: 0, alpha: 0),
-                        forKey: "inputColor1")
-
-        // 穴マスク：中心が白（穴あり）、外側が黒（穴なし）= 反転マスク
-        // → 中心部分を「見えなくする」マスクとして使う
-        let holeF = CIFilter(name: "CIRadialGradient")!
-        holeF.setValue(center,          forKey: "inputCenter")
-        holeF.setValue(innerHoleRadius * 0.7, forKey: "inputRadius0")
-        holeF.setValue(innerHoleRadius, forKey: "inputRadius1")
-        holeF.setValue(CIColor.white,   forKey: "inputColor0")  // 穴の中心 = 白（切り抜く）
-        holeF.setValue(CIColor.black,   forKey: "inputColor1")  // 外側 = 黒（切り抜かない）
-
-        guard let outerImage = outerF.outputImage?.cropped(to: extent),
-              let holeMask   = holeF.outputImage?.cropped(to: extent) else { return base }
-
-        // CIBlendWithMask: holeMask が白いところ（穴）は background（透明）を使う
-        // → 輪の中央を透明にして「ドーナツ形」にする
-        let transparent = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0))
-            .cropped(to: extent)
-        let cutFilter = CIFilter(name: "CIBlendWithMask")!
-        cutFilter.setValue(outerImage,   forKey: kCIInputBackgroundImageKey)
-        cutFilter.setValue(transparent,  forKey: kCIInputImageKey)
-        cutFilter.setValue(holeMask,     forKey: kCIInputMaskImageKey)
-        guard let ring = cutFilter.outputImage else { return base }
-
-        return composite(ring, over: base)
-    }
-
-    // ------------------------------------------------------------------
-    // ヘルパー：CGContext で楕円を描き CIImage に変換（虫状用）
-    //
-    // CIRadialGradient は真円しか描けないため、
-    // 楕円が必要な虫状は CGContext（通常の2D描画API）を使う。
-    //
-    // 【React Native との対比】
-    // HTML Canvas の ctx.ellipse() に相当するが、
-    // Swift では CGContext + CGPath を使う。
-    // ------------------------------------------------------------------
-    private func makeEllipseCIImage(
-        extent: CGRect,
-        cx: CGFloat, cy: CGFloat,
-        w: CGFloat, h: CGFloat,       // 楕円の横幅・縦幅
-        angleDeg: Double,             // 回転角度（度数法）
-        alpha: CGFloat
-    ) -> CIImage? {
-        let intW = Int(extent.width)
-        let intH = Int(extent.height)
-        guard intW > 0, intH > 0 else { return nil }
-
-        // RGBA 8bit のピクセルバッファを確保
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
+    @MainActor
+    private func makeScotomaEntity() -> ModelEntity {
+        let size = 512
         guard let ctx = CGContext(
             data: nil,
-            width: intW, height: intH,
+            width: size, height: size,
             bitsPerComponent: 8,
-            bytesPerRow: intW * 4,
-            space: colorSpace,
+            bytesPerRow: size * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
+        ) else { return ModelEntity() }
 
-        // 描画スタイル：半透明の濃いグレー、フェードエッジのためにぼかし
-        ctx.setFillColor(CGColor(red: 0.15, green: 0.15, blue: 0.15, alpha: alpha))
-        ctx.setShadow(offset: .zero, blur: h * 0.5)  // 楕円エッジをぼかす
+        ctx.clear(CGRect(x: 0, y: 0, width: size, height: size))
 
-        // 楕円の中心を原点に移動 → 回転 → 楕円描画 → 元に戻す
-        ctx.saveGState()
-        ctx.translateBy(x: cx, y: cy)
-        ctx.rotate(by: CGFloat(angleDeg * Double.pi / 180.0))
-        ctx.fillEllipse(in: CGRect(x: -w / 2, y: -h / 2, width: w, height: h))
-        ctx.restoreGState()
+        // 放射状グラデーション：中心が完全な黒 → 外縁が透明
+        // 中心の広い範囲を高不透明度で塗り、外縁だけをぼかす
+        // これにより「視野が欠けている」感が明確に伝わる
+        let center = CGPoint(x: size / 2, y: size / 2)
+        let radius = CGFloat(size) / 2.0
+        let colors: [CGColor] = [
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.98),  // 中心：完全に近い黒
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.95),  // 中心付近：ほぼ黒を広く保つ
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.60),  // グラデーション開始
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.0),   // 外縁：完全透明
+        ]
+        let locations: [CGFloat] = [0.0, 0.50, 0.78, 1.0]
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                     colors: colors as CFArray, locations: locations) {
+            ctx.drawRadialGradient(
+                gradient,
+                startCenter: center, startRadius: 0,
+                endCenter: center, endRadius: radius,
+                options: []
+            )
+        }
 
-        guard let cgImage = ctx.makeImage() else { return nil }
-        return CIImage(cgImage: cgImage)
+        guard let cgImage = ctx.makeImage() else { return ModelEntity() }
+
+        // generatePlane(width:height:) → 法線が +Z 軸（XY平面）
+        // overlayDistance=1.5m に合わせて 0.6m × 0.6m のベースサイズ
+        // （3.0m先の1.2m平面と同じ視野角になる）
+        // faceCulling = .none で裏からも見える
+        let mesh = MeshResource.generatePlane(width: 0.6, height: 0.6)
+        var material = UnlitMaterial()
+        material.faceCulling = .none
+
+        do {
+            let texture = try TextureResource(
+                image: cgImage,
+                withName: nil,
+                options: .init(semantic: .color)
+            )
+            material.color = .init(texture: .init(texture))
+            material.blending = .transparent(opacity: .init(floatLiteral: 1.0))
+        } catch {
+            print("⚠️ 中心暗点テクスチャ生成失敗: \(error)")
+        }
+
+        let entity = ModelEntity(mesh: mesh, materials: [material])
+        entity.name = "ScotomaOverlay"
+        entity.scale = SIMD3<Float>(1.0, 1.0, 1.0)
+        return entity
     }
 
     // ------------------------------------------------------------------
-    // ヘルパー：CISourceOverCompositing の共通処理
+    // 飛蚊症 Entity 群を生成する（ゴマ状のみ）
+    //
+    // 小さな半透明の暗い球体を7個配置する。
+    // 球体は向き不問で、視野内にランダムに分散する。
+    //
+    // 各飛蚊の定義：(水平オフセットm, 垂直オフセットm, 半径m, 不透明度)
+    // オフセットはヘッドの right/up ベクトル方向の距離（メートル）
+    // overlayDistance = 1.5m 基準のオフセット・サイズ
     // ------------------------------------------------------------------
-    private func composite(_ top: CIImage, over bottom: CIImage) -> CIImage {
-        let f = CIFilter(name: "CISourceOverCompositing")!
-        f.setValue(top,    forKey: kCIInputImageKey)
-        f.setValue(bottom, forKey: kCIInputBackgroundImageKey)
-        return f.outputImage ?? bottom
-    }
+    @MainActor
+    private func makeFloaterEntities() -> [ModelEntity] {
+        // (水平オフセット m, 垂直オフセット m, 半径 m, 不透明度)
+        // ゴマ状：小さな球が7個、視野内に分散
+        let defs: [(Float, Float, Float, Float)] = [
+            ( 0.06,  0.05, 0.015, 0.52),
+            (-0.10,  0.03, 0.013, 0.44),
+            ( 0.14, -0.04, 0.014, 0.48),
+            (-0.03,  0.11, 0.011, 0.40),
+            ( 0.08, -0.09, 0.013, 0.46),
+            (-0.16,  0.08, 0.011, 0.42),
+            ( 0.11,  0.14, 0.010, 0.38),
+        ]
 
-    // ------------------------------------------------------------------
-    // 線形補間ヘルパー（mix: a→b を t=0.0〜1.0 で補間）
-    // SIMD2<Float> 版と Float 版の両方を用意する
-    // ------------------------------------------------------------------
-    private func mix(_ a: SIMD2<Float>, _ b: SIMD2<Float>, t: Float) -> SIMD2<Float> {
-        return a + (b - a) * t
+        var entities: [ModelEntity] = []
+        for (hOffset, vOffset, radius, opacity) in defs {
+            let mesh = MeshResource.generateSphere(radius: radius)
+            var material = UnlitMaterial(color: .init(white: 0.05, alpha: CGFloat(opacity)))
+            material.faceCulling = .none
+            material.blending = .transparent(opacity: .init(floatLiteral: Float(opacity)))
+
+            let entity = ModelEntity(mesh: mesh, materials: [material])
+            entity.name = "FloaterOverlay"
+            entity.components.set(FloaterOffsetComponent(horizontal: hOffset, vertical: vOffset))
+            entities.append(entity)
+        }
+        return entities
     }
 
     // ------------------------------------------------------------------
