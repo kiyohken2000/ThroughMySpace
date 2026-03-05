@@ -68,11 +68,11 @@ Through My Space は、自分の部屋・職場・日常の空間を撮影した
 ■ 乱視
 角膜・水晶体のゆがみにより、光や輪郭が特定方向にブレて見える状態を体験します。夜間に光がにじんで見えることが特徴です。
 
-■ 中心暗点（近日追加予定）
+■ 中心暗点
 黄斑変性などで中心視野が欠ける状態を体験します。視線を向けた先がぼやけて見えなくなるため、読書や顔の認識が困難になります。
 
-■ 飛蚊症（近日追加予定）
-硝子体の混濁により、視界に糸や点が浮遊して見える状態を体験します。明るい背景を見たときに特に目立ちます。
+■ 飛蚊症
+硝子体の混濁により、視界に糸や点が浮遊して見える状態を体験します。明るい背景を見たときに特に目立ちます。ゴマ状・虫状・カエルの卵状の3タイプを選べます。
 
 ─────────────────────────
 使い方
@@ -144,11 +144,11 @@ Experience difficulty focusing on nearby objects due to age-related loss of lens
 ■ Astigmatism
 Experience light and edges appearing blurred in a specific direction due to irregular curvature of the cornea or lens.
 
-■ Central Scotoma (Coming Soon)
+■ Central Scotoma
 Experience the loss of central vision as seen in macular degeneration. Makes reading and recognizing faces difficult.
 
-■ Floaters (Coming Soon)
-Experience the shadows cast by vitreous debris drifting across your field of vision. Most noticeable against bright, uniform backgrounds.
+■ Floaters
+Experience the shadows cast by vitreous debris drifting across your field of vision. Most noticeable against bright, uniform backgrounds. Choose from three shape types: sesame, worm, or frog eggs.
 
 ─────────────────────────
 How to Use
@@ -205,8 +205,7 @@ https://kiyohken2000.github.io/ThroughMySpace/support.html
 ```
 This app simulates visual conditions using spatial photos on Apple Vision Pro.
 
-Implemented conditions: glaucoma (visual field loss), color vision deficiency (3 types), cataracts (with bloom effect), retinitis pigmentosa, presbyopia, and astigmatism.
-Planned for a future update: central scotoma (eye tracking required) and floaters (eye tracking required).
+Implemented conditions: glaucoma (visual field loss), color vision deficiency (3 types), cataracts (with bloom effect), retinitis pigmentosa, presbyopia, astigmatism, central scotoma (head-tracking based), and floaters (head-tracking based, with 3 shape types: sesame / worm / frog eggs).
 
 The app requires a spatial photo from the user's photo library to function. A standard HEIC photo is also accepted for testing purposes.
 
@@ -255,8 +254,12 @@ The app supports Japanese and English, switching automatically based on device l
 ## チェックリスト（申請前）
 
 - [x] プライバシーポリシーのURL設定（https://kiyohken2000.github.io/ThroughMySpace/privacy.html）
+- [x] Info.plist の `NSPhotoLibraryUsageDescription` が日英両方で記載されているか確認
+- [x] バージョン番号 / ビルド番号の設定（1.0 / 1）
+- [x] アプリ内の免責事項表示の確認
+- [x] 日英ローカライゼーション対応
+- [x] プライバシーポリシー・サポートページに英語追加
 - [ ] スクリーンショット撮影（visionOS向け）
-- [ ] アプリ内の免責事項表示の確認
-- [ ] Info.plist の `NSPhotoLibraryUsageDescription` が日英両方で記載されているか確認
-- [ ] バージョン番号 / ビルド番号の設定（例：1.0.0 / 1）
 - [ ] 実機（Apple Vision Pro）での最終動作確認
+- [ ] App Store Connect でアプリレコード作成・説明文入力
+- [ ] GitHub Pages にプッシュして各URLが有効か確認

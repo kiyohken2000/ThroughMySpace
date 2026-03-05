@@ -176,6 +176,26 @@ struct FloatingPanelView: View {
                         }
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
+
+                    // 飛蚊症の形状選択（飛蚊症選択時のみ表示）
+                    // 色覚異常の「1型/2型/3型」と同じパターン
+                    if conditionSetting.type == .floaters {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("panel.floatersType", tableName: "Localizable")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+
+                            Picker(String(localized: "panel.floatersType"), selection: $conditionSetting.floatersType) {
+                                ForEach(FloatersType.allCases) { type in
+                                    Text(type.title).tag(type)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }

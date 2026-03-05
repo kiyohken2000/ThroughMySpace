@@ -50,6 +50,8 @@
 "condition.rp.title" = "網膜色素変性症";
 "condition.presbyopia.title" = "老眼";
 "condition.astigmatism.title" = "乱視";
+"condition.scotoma.title" = "中心暗点";
+"condition.floaters.title" = "飛蚊症";
 
 // ----- ConditionType.shortDescription -----
 "condition.none.short" = "元の空間写真をそのまま体験します";
@@ -59,6 +61,8 @@
 "condition.rp.short" = "周辺視野から徐々に失われ、トンネル視野になる状態を体験します";
 "condition.presbyopia.short" = "近距離にピントが合いにくくなる状態を体験します";
 "condition.astigmatism.short" = "光や輪郭が特定方向にブレて見える状態を体験します";
+"condition.scotoma.short" = "視線の中心が欠けて見えにくくなる状態を体験します";
+"condition.floaters.short" = "視界に糸や点が浮遊して見える状態を体験します";
 
 // ----- ConditionType.detailDescription -----
 "condition.visualField.detail" = "目の内圧が上がり、視神経がゆっくりと失われていく病気です。\n\n視野は少しずつ狭くなるため、本人が気づかないことが多く、発見時にはすでに進行していることも。\n日本の患者数は約400万人。";
@@ -67,6 +71,14 @@
 "condition.rp.detail" = "網膜の光受容細胞が徐々に壊れていく遺伝性の病気です。\n\n夜盲（暗い場所で見えにくい）から始まり、周辺視野がゆっくりと失われていきます。\n日本の患者数は約3万人。現在、根本的な治療法はありません。";
 "condition.presbyopia.detail" = "加齢により水晶体の弾力が失われ、近くを見るときにピントが合いにくくなる状態です。\n\n40歳代から始まることが多く、60歳代ではほぼ全員が影響を受けます。\n本・スマートフォン・食事など、手元の「近景」を見るときに特に感じます。";
 "condition.astigmatism.detail" = "角膜や水晶体のゆがみにより、光が一点に集まらず特定方向にブレて見える状態です。\n\n軽度の乱視は多くの人に見られます。夜間や暗い環境で光がにじんで見えることが特徴です。\n眼鏡・コンタクトで矯正できますが、未矯正だと目の疲れの原因になります。";
+"condition.scotoma.detail" = "黄斑変性などで中心視野が失われる状態です。\n\n視線を向けた先がぼやけたり、暗く欠けて見えるため、読書・顔の認識・細かい作業が困難になります。\n加齢黄斑変性は日本の視覚障害原因の上位に挙がる病気です。";
+"condition.floaters.detail" = "硝子体（目の中のゼリー状組織）の混濁により、視界に糸・点・輪のような影が浮かんで見える状態です。\n\n明るい背景を見たとき特に目立ちます。多くは加齢による生理的なものですが、急に増えた場合は網膜剥離の初期症状のこともあります。";
+
+// ----- FloatersType.title -----
+"floaters.granular" = "ゴマ状";
+"floaters.worm"     = "虫状";
+"floaters.egg"      = "カエルの卵状";
+"panel.floatersType" = "形状";
 
 // ----- ColorBlindType.title -----
 "colorBlind.deuteranopia" = "2型色覚（緑弱）";

@@ -18,6 +18,8 @@ enum ConditionType: String, CaseIterable, Identifiable {
     case retinitispigmentosa  = "retinitispigmentosa"  // 網膜色素変性症（周辺から視野が失われる）
     case presbyopia           = "presbyopia"           // 老眼（近距離のピントが合わない）
     case astigmatism          = "astigmatism"          // 乱視（特定方向にブレる）
+    case scotoma              = "scotoma"              // 中心暗点（黄斑変性など、視線中心が欠ける）
+    case floaters             = "floaters"             // 飛蚊症（硝子体の混濁による浮遊物）
 
     var id: String { rawValue }
 
@@ -31,6 +33,8 @@ enum ConditionType: String, CaseIterable, Identifiable {
         case .retinitispigmentosa: return String(localized: "condition.rp.title")
         case .presbyopia:          return String(localized: "condition.presbyopia.title")
         case .astigmatism:         return String(localized: "condition.astigmatism.title")
+        case .scotoma:             return String(localized: "condition.scotoma.title")
+        case .floaters:            return String(localized: "condition.floaters.title")
         }
     }
 
@@ -44,6 +48,8 @@ enum ConditionType: String, CaseIterable, Identifiable {
         case .retinitispigmentosa: return String(localized: "condition.rp.short")
         case .presbyopia:          return String(localized: "condition.presbyopia.short")
         case .astigmatism:         return String(localized: "condition.astigmatism.short")
+        case .scotoma:             return String(localized: "condition.scotoma.short")
+        case .floaters:            return String(localized: "condition.floaters.short")
         }
     }
 
@@ -57,6 +63,8 @@ enum ConditionType: String, CaseIterable, Identifiable {
         case .retinitispigmentosa: return String(localized: "condition.rp.detail")
         case .presbyopia:          return String(localized: "condition.presbyopia.detail")
         case .astigmatism:         return String(localized: "condition.astigmatism.detail")
+        case .scotoma:             return String(localized: "condition.scotoma.detail")
+        case .floaters:            return String(localized: "condition.floaters.detail")
         }
     }
 
@@ -70,6 +78,8 @@ enum ConditionType: String, CaseIterable, Identifiable {
         case .retinitispigmentosa: return "circle.dotted"
         case .presbyopia:          return "eyeglasses"
         case .astigmatism:         return "lines.measurement.horizontal"
+        case .scotoma:             return "scope"
+        case .floaters:            return "bubble.left"
         }
     }
 
@@ -83,6 +93,8 @@ enum ConditionType: String, CaseIterable, Identifiable {
         case .retinitispigmentosa: return .gray
         case .presbyopia:          return .green
         case .astigmatism:         return .cyan
+        case .scotoma:             return .red
+        case .floaters:            return .teal
         }
     }
 }
@@ -112,6 +124,26 @@ struct ConditionSetting: Equatable {
 
     // 色覚異常のサブタイプ
     var colorBlindType: ColorBlindType = .deuteranopia
+
+    // 飛蚊症の形状タイプ
+    var floatersType: FloatersType = .granular
+}
+
+// 飛蚊症の形状タイプ
+enum FloatersType: String, CaseIterable, Identifiable {
+    case granular = "granular"  // ゴマ状（小さな点）
+    case worm     = "worm"      // 虫状（細長い楕円）
+    case egg      = "egg"       // カエルの卵状（輪っか・ドーナツ形）
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .granular: return String(localized: "floaters.granular")
+        case .worm:     return String(localized: "floaters.worm")
+        case .egg:      return String(localized: "floaters.egg")
+        }
+    }
 }
 
 // 色覚異常のタイプ（Brettel 1997 に基づく分類）

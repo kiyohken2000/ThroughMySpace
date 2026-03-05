@@ -68,6 +68,24 @@
 "condition.presbyopia.detail" = "A condition where the lens loses elasticity with age, making it difficult to focus on nearby objects.\n\nTypically begins in the 40s and affects nearly everyone by their 60s.\nMost noticeable when reading books, looking at a phone, or seeing close-up objects.";
 "condition.astigmatism.detail" = "A condition caused by an irregular curve in the cornea or lens, preventing light from focusing at a single point.\n\nMild astigmatism is common. A characteristic symptom is light appearing streaked or blurred, especially at night.\nCan be corrected with glasses or contact lenses.";
 
+// ----- ConditionType.title (scotoma / floaters) -----
+"condition.scotoma.title" = "Central Scotoma";
+"condition.floaters.title" = "Floaters";
+
+// ----- ConditionType.shortDescription (scotoma / floaters) -----
+"condition.scotoma.short" = "Experience central vision loss where your point of focus becomes blurred";
+"condition.floaters.short" = "Experience thread-like shadows drifting across your field of vision";
+
+// ----- ConditionType.detailDescription (scotoma / floaters) -----
+"condition.scotoma.detail" = "A condition caused by macular degeneration, where the center of the visual field is lost.\n\nThe area you look directly at becomes blurred or dark, making reading, recognizing faces, and fine detail work difficult.\nAge-related macular degeneration is a leading cause of visual impairment in Japan.";
+"condition.floaters.detail" = "Shadows cast by debris in the vitreous humor, the gel-like substance filling the eye.\n\nAppear as threads, dots, or rings drifting across your field of vision. Most noticeable against bright, uniform backgrounds.\nUsually harmless with age, but a sudden increase may indicate retinal detachment.";
+
+// ----- FloatersType.title -----
+"floaters.granular" = "Sesame";
+"floaters.worm"     = "Worm";
+"floaters.egg"      = "Frog Eggs";
+"panel.floatersType" = "Shape";
+
 // ----- ColorBlindType.title -----
 "colorBlind.deuteranopia" = "Type 2 (Green Weak)";
 "colorBlind.protanopia" = "Type 1 (Red Weak)";

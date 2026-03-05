@@ -24,6 +24,7 @@ import RealityKitContent
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import Metal
+import ARKit
 
 struct ImmersiveView: View {
     @Environment(AppModel.self) private var appModel
@@ -57,6 +58,18 @@ struct ImmersiveView: View {
 
     // 現在処理中のフィルタータスク（連打時に前のタスクをキャンセルするため）
     @State private var filterTask: Task<Void, Never>? = nil
+
+    // ------------------------------------------------------------------
+    // ARKit セッション（アイトラッキング用）
+    //
+    // WorldTrackingProvider でヘッドの向きを毎フレーム取得する。
+    // visionOS の Full Immersive Space では追加権限なしで利用できる。
+    //
+    // 【React Native との対比】
+    // iOS の ARSession に相当するが、visionOS では ARKitSession を使う。
+    // ------------------------------------------------------------------
+    @State private var arkitSession   = ARKitSession()
+    @State private var worldTracking  = WorldTrackingProvider()
 
     var body: some View {
         RealityView { content, attachments in
@@ -130,6 +143,24 @@ struct ImmersiveView: View {
             try? await Task.sleep(for: .seconds(5))
             withAnimation(.easeOut(duration: 1.0)) {
                 showEntryNotice = false
+            }
+        }
+        // ARKit セッション開始（アイトラッキング用）
+        // WorldTrackingProvider でヘッドの向きを毎フレーム取得する
+        .task {
+            await startARKitTracking()
+        }
+        // 視線位置が更新されたとき：中心暗点・飛蚊症フィルターを再適用
+        // 他の症状では視線追跡が不要なので、条件を絞ってパフォーマンスを守る
+        .onChange(of: appModel.gazeNormalized) { _, _ in
+            let type = appModel.conditionSetting.type
+            guard type == .scotoma || type == .floaters else { return }
+            guard let dome = domeEntity else { return }
+            filterTask?.cancel()
+            filterTask = Task { @MainActor in
+                await applyMaterial(to: dome,
+                                    textures: appModel.selectedStereoTextures,
+                                    setting: appModel.conditionSetting)
             }
         }
         // 写真が変わったとき：CGImageキャッシュをクリアして再抽出
@@ -271,6 +302,21 @@ struct ImmersiveView: View {
 
         case .astigmatism:
             filteredCI = applyAstigmatismFilter(to: ciImage, intensity: setting.intensity.value)
+
+        case .scotoma:
+            filteredCI = applyScotomaFilter(
+                to: ciImage,
+                intensity: setting.intensity.value,
+                center: appModel.gazeNormalized
+            )
+
+        case .floaters:
+            filteredCI = applyFloatersFilter(
+                to: ciImage,
+                intensity: setting.intensity.value,
+                center: appModel.gazeNormalized,
+                floatersType: setting.floatersType
+            )
         }
 
         // キャンセルチェック（重い処理の後）
@@ -790,6 +836,398 @@ struct ImmersiveView: View {
         controlsFilter.saturation  = mix(1.0, 0.95, t: intensity)
 
         return controlsFilter.outputImage ?? clampedMotion
+    }
+
+    // ------------------------------------------------------------------
+    // ARKit ワールドトラッキング開始
+    //
+    // WorldTrackingProvider を使ってヘッドの向きを毎フレーム取得し、
+    // ドームのUV座標（視線の正規化位置）に変換して AppModel に保存する。
+    //
+    // 【変換の仕組み】
+    // DeviceAnchor.originFromAnchorTransform は 4x4 行列。
+    // 3列目（columns.2）は「Z軸の向き」= ヘッドの「後ろ方向」。
+    // ヘッドの「前方向」は -Z なので、columns.2 に -1 をかける。
+    //
+    // その前方ベクトル (x, y, z) をドームのUV座標に変換：
+    //   u = 0.5 + atan2(x, -z) / (2π)
+    //   v = 0.5 - asin(y) / π
+    //
+    // 【スムージング】
+    // 生の視線をそのまま使うと中心暗点が震えて見える。
+    // 前フレームの値と lerp でスムージングする（α = 0.15）。
+    // ------------------------------------------------------------------
+    @MainActor
+    private func startARKitTracking() async {
+        do {
+            try await arkitSession.run([worldTracking])
+            print("✅ ARKitSession 開始")
+        } catch {
+            print("⚠️ ARKitSession 開始失敗: \(error)")
+            return
+        }
+
+        // 毎フレーム（約 60fps）ヘッドの向きを取得してガze位置を更新
+        // Task.sleep で 16ms（約 60fps）間隔でポーリングする
+        while !Task.isCancelled {
+            // 現在のタイムスタンプでデバイスアンカーを取得
+            if let anchor = worldTracking.queryDeviceAnchor(atTimestamp: CACurrentMediaTime()) {
+                let matrix = anchor.originFromAnchorTransform
+
+                // ヘッドの前方ベクトル（-Z 軸）を抽出
+                // columns.2 は Z 軸の向き（後ろ向き）なので符号を反転
+                let forward = SIMD3<Float>(
+                    -matrix.columns.2.x,
+                    -matrix.columns.2.y,
+                    -matrix.columns.2.z
+                )
+
+                // 球面上のUV座標に変換（0.0〜1.0 の正規化座標）
+                // u: 水平方向（左右）= atan2(x, -z) / (2π) + 0.5
+                // v: 垂直方向（上下）= 0.5 - asin(y) / π
+                let u = 0.5 + atan2f(forward.x, -forward.z) / (2.0 * Float.pi)
+                let v = 0.5 - asinf(max(-1.0, min(1.0, forward.y))) / Float.pi
+                let rawGaze = SIMD2<Float>(u, v)
+
+                // スムージング（lerp α = 0.15）
+                // 急な動きは追従しすぎず、緩やかな動きはスムーズに追う
+                let alpha: Float = 0.15
+                let smoothed = mix(appModel.gazeNormalized, rawGaze, t: alpha)
+                appModel.gazeNormalized = smoothed
+            }
+
+            // 約 60fps でポーリング（16ms）
+            try? await Task.sleep(for: .milliseconds(16))
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 中心暗点フィルター（黄斑変性などで中心視野が欠けた状態）
+    //
+    // 【中心暗点の視覚的特徴】
+    // ・視線の中心（fovea）が欠けて見えなくなる
+    // ・欠けた部分は暗く（または無）なり、周辺視野は保たれる
+    // ・視線を向けた先が「消える」ため、読書や顔認識が困難
+    //
+    // 【アイトラッキング連動】
+    // center パラメータが視線の正規化UV座標 (0.0〜1.0)。
+    // (0.5, 0.5) = 画像中央 = まっすぐ前を見ているとき。
+    //
+    // 【実装】
+    // CIRadialGradient でマスクを生成：
+    //   中心（視線位置）は黒（視野なし）、外側は白（視野あり）
+    // CIBlendWithMask で元画像と黒背景を合成する。
+    // ------------------------------------------------------------------
+    private func applyScotomaFilter(
+        to image: CIImage,
+        intensity: Float,
+        center: SIMD2<Float>
+    ) -> CIImage {
+        guard intensity > 0.01 else { return image }
+
+        let width  = image.extent.width
+        let height = image.extent.height
+
+        // 視線位置をピクセル座標に変換
+        // CIImage の座標は左下原点なので Y を反転する
+        let cx = CGFloat(center.x) * width
+        let cy = (1.0 - CGFloat(center.y)) * height
+        let ciCenter = CIVector(x: cx, y: cy)
+
+        let shortSide = Float(min(width, height))
+
+        // 中心の「見えない領域」の半径
+        // intensity=0.0（最小）: 短辺の 5%（わずかなぼやけ）
+        // intensity=1.0（最大）: 短辺の 25%（重度の中心暗点）
+        let innerRadius = shortSide * mix(0.05, 0.25, t: intensity)
+        // 暗化が完了する外側の半径（なだらかなグラデーション境界）
+        let outerRadius = innerRadius + shortSide * 0.10
+
+        // 放射状グラデーション：中心 = 黒（視野なし）、外側 = 白（視野あり）
+        // ※ 通常の視野狭窄と逆（内側が黒）
+        let gradientFilter = CIFilter(name: "CIRadialGradient")!
+        gradientFilter.setValue(ciCenter,       forKey: "inputCenter")
+        gradientFilter.setValue(innerRadius,    forKey: "inputRadius0")
+        gradientFilter.setValue(outerRadius,    forKey: "inputRadius1")
+        gradientFilter.setValue(CIColor.black,  forKey: "inputColor0")  // 中心：黒（見えない）
+        gradientFilter.setValue(CIColor.white,  forKey: "inputColor1")  // 外周：白（見える）
+        guard let gradientImage = gradientFilter.outputImage else { return image }
+
+        let mask = gradientImage.cropped(to: image.extent)
+
+        // マスクを使って中心は黒、周辺は元画像を表示
+        let blackBackground = CIImage(color: CIColor.black).cropped(to: image.extent)
+        let blendFilter = CIFilter(name: "CIBlendWithMask")!
+        blendFilter.setValue(blackBackground, forKey: kCIInputBackgroundImageKey)
+        blendFilter.setValue(image,           forKey: kCIInputImageKey)
+        blendFilter.setValue(mask,            forKey: kCIInputMaskImageKey)
+
+        return blendFilter.outputImage ?? image
+    }
+
+    // ------------------------------------------------------------------
+    // 飛蚊症フィルター（硝子体の混濁による影）
+    //
+    // 【飛蚊症の視覚的特徴】
+    // ・視界に糸状・点状・輪状の半透明な影が浮いて見える
+    // ・視線を動かすと少し遅れて動く（硝子体と一緒に揺れる）
+    // ・明るい均一な背景（空・白壁）で特に目立つ
+    // ・加齢や近視が原因のことが多い
+    //
+    // 【アイトラッキング連動】
+    // center パラメータを基準に影の位置を決定する。
+    // 視線が動くと影もゆっくり追従する（スムージングは AppModel 側）。
+    //
+    // 【実装】
+    // CIRadialGradient で複数の半透明な楕円形の影を生成し、
+    // CISourceOverCompositing で元画像に重ねる。
+    // 影の位置は center からのオフセットで決まる（固定シード）。
+    // ------------------------------------------------------------------
+    private func applyFloatersFilter(
+        to image: CIImage,
+        intensity: Float,
+        center: SIMD2<Float>,
+        floatersType: FloatersType = .granular
+    ) -> CIImage {
+        guard intensity > 0.01 else { return image }
+
+        let width     = image.extent.width
+        let height    = image.extent.height
+        let shortSide = Float(min(width, height))
+
+        // intensity に応じてサイズ・濃さをスケール
+        let sizeScale  = mix(0.6, 1.4, t: intensity)
+        let alphaScale = mix(0.4, 1.0, t: intensity)
+
+        // 透明な重ね合わせベース画像
+        var overlayImage = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0))
+            .cropped(to: image.extent)
+
+        switch floatersType {
+
+        // ------------------------------------------------------------------
+        // ゴマ状：小さな丸い点が複数浮かぶ
+        // 硝子体の変性による微細な混濁。最も一般的な飛蚊症。
+        // ------------------------------------------------------------------
+        case .granular:
+            // (offsetX, offsetY, radiusScale, alpha)
+            let defs: [(Float, Float, Float, Float)] = [
+                ( 0.04,  0.07, 0.018, 0.55),
+                (-0.09,  0.02, 0.013, 0.45),
+                ( 0.12, -0.05, 0.016, 0.50),
+                (-0.03,  0.13, 0.011, 0.40),
+                ( 0.06, -0.11, 0.015, 0.48),
+                (-0.14,  0.09, 0.012, 0.42),
+                ( 0.09,  0.16, 0.010, 0.38),
+            ]
+            for (ox, oy, rs, a) in defs {
+                let fx     = CGFloat(center.x + ox) * width
+                let fy     = (1.0 - CGFloat(center.y + oy)) * height
+                let r      = CGFloat(shortSide) * CGFloat(rs * sizeScale)
+                let alpha  = CGFloat(min(1.0, a * alphaScale))
+                overlayImage = addCircleSpot(
+                    to: overlayImage, extent: image.extent,
+                    cx: fx, cy: fy,
+                    innerRadius: r, outerRadius: r * 1.5,
+                    alpha: alpha
+                )
+            }
+
+        // ------------------------------------------------------------------
+        // 虫状：横長の楕円が数個浮かぶ
+        // CGContext でベジェ楕円を描き、CIImage に変換して重ねる。
+        // CIRadialGradient は真円のみなので CGContext を使う必要がある。
+        // ------------------------------------------------------------------
+        case .worm:
+            let defs: [(ox: Float, oy: Float, wScale: Float, hScale: Float, angle: Double, alpha: Float)] = [
+                ( 0.05,  0.07, 0.10, 0.025, -15, 0.58),
+                (-0.10,  0.03, 0.08, 0.020,  20, 0.48),
+                ( 0.12, -0.06, 0.09, 0.022,  -5, 0.52),
+                (-0.04,  0.14, 0.07, 0.018,  30, 0.44),
+            ]
+            for def in defs {
+                let cx    = CGFloat(center.x + def.ox) * width
+                let cy    = (1.0 - CGFloat(center.y + def.oy)) * height
+                let w     = CGFloat(shortSide) * CGFloat(def.wScale * sizeScale)
+                let h     = CGFloat(shortSide) * CGFloat(def.hScale * sizeScale)
+                let alpha = CGFloat(min(1.0, def.alpha * alphaScale))
+                if let ciEllipse = makeEllipseCIImage(
+                    extent: image.extent,
+                    cx: cx, cy: cy, w: w, h: h,
+                    angleDeg: def.angle, alpha: alpha
+                ) {
+                    overlayImage = composite(ciEllipse, over: overlayImage)
+                }
+            }
+
+        // ------------------------------------------------------------------
+        // カエルの卵状：輪っか（ドーナツ形）が浮かぶ
+        // 外側の円から内側の透明円を引いてリング形状を作る。
+        // CIRadialGradient の color0（内側）を透明にすると実現できる。
+        // ------------------------------------------------------------------
+        case .egg:
+            let defs: [(Float, Float, Float, Float)] = [
+                ( 0.05,  0.08, 0.040, 0.55),
+                (-0.11,  0.04, 0.030, 0.48),
+                ( 0.13, -0.07, 0.035, 0.52),
+                (-0.03,  0.16, 0.025, 0.42),
+            ]
+            for (ox, oy, rs, a) in defs {
+                let fx    = CGFloat(center.x + ox) * width
+                let fy    = (1.0 - CGFloat(center.y + oy)) * height
+                let outer = CGFloat(shortSide) * CGFloat(rs * sizeScale)
+                let inner = outer * 0.55  // リングの穴のサイズ（55%）
+                let alpha = CGFloat(min(1.0, a * alphaScale))
+                overlayImage = addRingSpot(
+                    to: overlayImage, extent: image.extent,
+                    cx: fx, cy: fy,
+                    innerHoleRadius: inner,
+                    ringOuterRadius: outer,
+                    edgeFade: outer * 0.15,
+                    alpha: alpha
+                )
+            }
+        }
+
+        // 影レイヤーを元画像の上に重ねる
+        return composite(overlayImage, over: image)
+    }
+
+    // ------------------------------------------------------------------
+    // ヘルパー：円形スポット（ゴマ状用）
+    // CIRadialGradient で内側が濃く外側が透明になる円を生成する
+    // ------------------------------------------------------------------
+    private func addCircleSpot(
+        to base: CIImage, extent: CGRect,
+        cx: CGFloat, cy: CGFloat,
+        innerRadius: CGFloat, outerRadius: CGFloat,
+        alpha: CGFloat
+    ) -> CIImage {
+        let f = CIFilter(name: "CIRadialGradient")!
+        f.setValue(CIVector(x: cx, y: cy), forKey: "inputCenter")
+        f.setValue(innerRadius,            forKey: "inputRadius0")
+        f.setValue(outerRadius,            forKey: "inputRadius1")
+        f.setValue(CIColor(red: 0.15, green: 0.15, blue: 0.15, alpha: alpha),
+                   forKey: "inputColor0")
+        f.setValue(CIColor(red: 0, green: 0, blue: 0, alpha: 0),
+                   forKey: "inputColor1")
+        guard let spot = f.outputImage?.cropped(to: extent) else { return base }
+        return composite(spot, over: base)
+    }
+
+    // ------------------------------------------------------------------
+    // ヘルパー：リング形状（カエルの卵状用）
+    // 2つの CIRadialGradient を組み合わせてドーナツ形を作る。
+    // 外側グラデーション（輪の外縁）から内側穴（透明）を CIBlendWithMask で切り抜く。
+    // ------------------------------------------------------------------
+    private func addRingSpot(
+        to base: CIImage, extent: CGRect,
+        cx: CGFloat, cy: CGFloat,
+        innerHoleRadius: CGFloat,   // 穴の半径
+        ringOuterRadius: CGFloat,   // 輪の外縁半径
+        edgeFade: CGFloat,          // 外縁のフェード幅
+        alpha: CGFloat
+    ) -> CIImage {
+        let center = CIVector(x: cx, y: cy)
+
+        // 輪本体（外縁グラデーション）：外側が透明、内側が濃い
+        let outerF = CIFilter(name: "CIRadialGradient")!
+        outerF.setValue(center,            forKey: "inputCenter")
+        outerF.setValue(ringOuterRadius - edgeFade, forKey: "inputRadius0")
+        outerF.setValue(ringOuterRadius,   forKey: "inputRadius1")
+        outerF.setValue(CIColor(red: 0.15, green: 0.15, blue: 0.15, alpha: alpha),
+                        forKey: "inputColor0")
+        outerF.setValue(CIColor(red: 0, green: 0, blue: 0, alpha: 0),
+                        forKey: "inputColor1")
+
+        // 穴マスク：中心が白（穴あり）、外側が黒（穴なし）= 反転マスク
+        // → 中心部分を「見えなくする」マスクとして使う
+        let holeF = CIFilter(name: "CIRadialGradient")!
+        holeF.setValue(center,          forKey: "inputCenter")
+        holeF.setValue(innerHoleRadius * 0.7, forKey: "inputRadius0")
+        holeF.setValue(innerHoleRadius, forKey: "inputRadius1")
+        holeF.setValue(CIColor.white,   forKey: "inputColor0")  // 穴の中心 = 白（切り抜く）
+        holeF.setValue(CIColor.black,   forKey: "inputColor1")  // 外側 = 黒（切り抜かない）
+
+        guard let outerImage = outerF.outputImage?.cropped(to: extent),
+              let holeMask   = holeF.outputImage?.cropped(to: extent) else { return base }
+
+        // CIBlendWithMask: holeMask が白いところ（穴）は background（透明）を使う
+        // → 輪の中央を透明にして「ドーナツ形」にする
+        let transparent = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0))
+            .cropped(to: extent)
+        let cutFilter = CIFilter(name: "CIBlendWithMask")!
+        cutFilter.setValue(outerImage,   forKey: kCIInputBackgroundImageKey)
+        cutFilter.setValue(transparent,  forKey: kCIInputImageKey)
+        cutFilter.setValue(holeMask,     forKey: kCIInputMaskImageKey)
+        guard let ring = cutFilter.outputImage else { return base }
+
+        return composite(ring, over: base)
+    }
+
+    // ------------------------------------------------------------------
+    // ヘルパー：CGContext で楕円を描き CIImage に変換（虫状用）
+    //
+    // CIRadialGradient は真円しか描けないため、
+    // 楕円が必要な虫状は CGContext（通常の2D描画API）を使う。
+    //
+    // 【React Native との対比】
+    // HTML Canvas の ctx.ellipse() に相当するが、
+    // Swift では CGContext + CGPath を使う。
+    // ------------------------------------------------------------------
+    private func makeEllipseCIImage(
+        extent: CGRect,
+        cx: CGFloat, cy: CGFloat,
+        w: CGFloat, h: CGFloat,       // 楕円の横幅・縦幅
+        angleDeg: Double,             // 回転角度（度数法）
+        alpha: CGFloat
+    ) -> CIImage? {
+        let intW = Int(extent.width)
+        let intH = Int(extent.height)
+        guard intW > 0, intH > 0 else { return nil }
+
+        // RGBA 8bit のピクセルバッファを確保
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: nil,
+            width: intW, height: intH,
+            bitsPerComponent: 8,
+            bytesPerRow: intW * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        // 描画スタイル：半透明の濃いグレー、フェードエッジのためにぼかし
+        ctx.setFillColor(CGColor(red: 0.15, green: 0.15, blue: 0.15, alpha: alpha))
+        ctx.setShadow(offset: .zero, blur: h * 0.5)  // 楕円エッジをぼかす
+
+        // 楕円の中心を原点に移動 → 回転 → 楕円描画 → 元に戻す
+        ctx.saveGState()
+        ctx.translateBy(x: cx, y: cy)
+        ctx.rotate(by: CGFloat(angleDeg * Double.pi / 180.0))
+        ctx.fillEllipse(in: CGRect(x: -w / 2, y: -h / 2, width: w, height: h))
+        ctx.restoreGState()
+
+        guard let cgImage = ctx.makeImage() else { return nil }
+        return CIImage(cgImage: cgImage)
+    }
+
+    // ------------------------------------------------------------------
+    // ヘルパー：CISourceOverCompositing の共通処理
+    // ------------------------------------------------------------------
+    private func composite(_ top: CIImage, over bottom: CIImage) -> CIImage {
+        let f = CIFilter(name: "CISourceOverCompositing")!
+        f.setValue(top,    forKey: kCIInputImageKey)
+        f.setValue(bottom, forKey: kCIInputBackgroundImageKey)
+        return f.outputImage ?? bottom
+    }
+
+    // ------------------------------------------------------------------
+    // 線形補間ヘルパー（mix: a→b を t=0.0〜1.0 で補間）
+    // SIMD2<Float> 版と Float 版の両方を用意する
+    // ------------------------------------------------------------------
+    private func mix(_ a: SIMD2<Float>, _ b: SIMD2<Float>, t: Float) -> SIMD2<Float> {
+        return a + (b - a) * t
     }
 
     // ------------------------------------------------------------------

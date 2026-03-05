@@ -289,8 +289,8 @@ struct PhotoTipsView: View {
         ("circle.dotted",              .gray,   "condition.rp.title",            "tip.rp.text",            false),
         ("eyeglasses",                 .green,  "condition.presbyopia.title",    "tip.presbyopia.text",    false),
         ("lines.measurement.horizontal", .cyan, "condition.astigmatism.title",   "tip.astigmatism.text",   false),
-        ("scope",                      .red,    "tip.scotoma.label",             "tip.scotoma.text",       true),
-        ("bubble.left",                .teal,   "tip.floaters.label",            "tip.floaters.text",      true),
+        ("scope",                      .red,    "tip.scotoma.label",             "tip.scotoma.text",       false),
+        ("bubble.left",                .teal,   "tip.floaters.label",            "tip.floaters.text",      false),
     ]
 
     // 縦1列レイアウト
