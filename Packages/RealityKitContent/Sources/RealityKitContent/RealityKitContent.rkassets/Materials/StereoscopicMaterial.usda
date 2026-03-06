@@ -7,35 +7,56 @@
 
 def Xform "Root"
 {
+    // compiledmaterial としてコンパイルさせるためのダミーメッシュ
+    // このスフィアに StereoscopicMaterial をバインドすることで
+    // .reality ファイル内に compiledmaterial が生成される
+    def Sphere "DummySphere" (
+        active = true
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/StereoscopicMaterial> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double radius = 0.001
+        float3 xformOp:translate = (100, 100, 100)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    // ------------------------------------------------------------------
+    // StereoscopicMaterial
+    //
+    // 左右目に別々のテクスチャを表示する立体視マテリアル。
+    // フィルター処理（視野狭窄・色覚異常など）は Swift 側の
+    // Core Image で行い、処理済みテクスチャをここに渡す。
+    //
+    // 使用する RealityKit 固有ノード（正しい node ID）：
+    //   - ND_RealityKitTexture2D_color3  : テクスチャサンプラー
+    //   - ND_realitykit_geometry_switch_cameraindex_color3 : 左右目切り替え
+    //   - ND_realitykit_unlit_surfaceshader : アンリットサーフェス
+    //
+    // ※ これらのノードは rkassets の ShaderGraph としてコンパイルした
+    //   .reality ファイルからのみ使用可能（生 .usda では不可）。
+    // ------------------------------------------------------------------
     def Material "StereoscopicMaterial"
     {
+        // 左目テクスチャ（Swift から TextureResource を渡す）
         asset inputs:LeftTexture = @@ (
             customData = { dictionary realitykit = { float2 positionInSubgraph = (-700, -160) } }
         )
+        // 右目テクスチャ（Swift から TextureResource を渡す）
         asset inputs:RightTexture = @@ (
             customData = { dictionary realitykit = { float2 positionInSubgraph = (-700, 160) } }
-        )
-
-        // 症状モード: 0=なし, 1=視野狭窄, 2=色覚異常
-        float inputs:ConditionMode = 0 (
-            customData = { dictionary realitykit = { float2 positionInSubgraph = (-700, 320) } }
-        )
-
-        // 症状の強度 0.0〜1.0
-        float inputs:Intensity = 0.5 (
-            customData = { dictionary realitykit = { float2 positionInSubgraph = (-700, 400) } }
         )
 
         token outputs:realitykit:vertex
         token outputs:mtlx:surface.connect = </Root/StereoscopicMaterial/UnlitSurface.outputs:out>
         token outputs:surface.connect = </Root/StereoscopicMaterial/UnlitSurface.outputs:out>
 
-        float2 ui:nodegraph:realitykit:subgraphOutputs:pos = (1100, 0)
+        float2 ui:nodegraph:realitykit:subgraphOutputs:pos = (400, 0)
         float2 ui:nodegraph:realitykit:subgraphOutputs:size = (182, 89)
 
-        // -------------------------------------------------------
         // UV 座標取得
-        // -------------------------------------------------------
         def Shader "Texcoord"
         {
             uniform token info:id = "ND_texcoord_vector2"
@@ -44,9 +65,7 @@ def Xform "Root"
             float2 ui:nodegraph:node:pos = (-700, 0)
         }
 
-        // -------------------------------------------------------
-        // 左右テクスチャサンプラー
-        // -------------------------------------------------------
+        // 左目テクスチャサンプラー
         def Shader "LeftImageSampler"
         {
             uniform token info:id = "ND_RealityKitTexture2D_color3"
@@ -56,6 +75,7 @@ def Xform "Root"
             float2 ui:nodegraph:node:pos = (-450, -160)
         }
 
+        // 右目テクスチャサンプラー
         def Shader "RightImageSampler"
         {
             uniform token info:id = "ND_RealityKitTexture2D_color3"
@@ -65,7 +85,8 @@ def Xform "Root"
             float2 ui:nodegraph:node:pos = (-450, 160)
         }
 
-        // 左右目切り替え
+        // 左右目切り替えノード
+        // Apple Vision Pro では左目レンダリング時に Left を、右目に Right を出力する
         def Shader "CameraIndexSwitch"
         {
             uniform token info:id = "ND_realitykit_geometry_switch_cameraindex_color3"
@@ -76,229 +97,15 @@ def Xform "Root"
             float2 ui:nodegraph:node:pos = (-200, 0)
         }
 
-        // -------------------------------------------------------
-        // 視野狭窄マスク計算
-        //
-        // UV(0〜1) → 中心基準に変換 → 距離計算 → smoothstep でマスク生成
-        //
-        // ポイント：
-        //   smoothstep は low < high が前提。low > high だと未定義動作。
-        //   正順 smoothstep(low=Radius, high=Edge, dist) を使い
-        //   "dist<Radius→0, dist>Edge→1" を得てから 1-result で反転する。
-        //   これで "dist<Radius→1（見える）, dist>Edge→0（暗転）" になる。
-        // -------------------------------------------------------
-        def Shader "UVOffset"
-        {
-            uniform token info:id = "ND_constant_vector2"
-            float2 inputs:value = (0.5, 0.5)
-            float2 outputs:out
-            float2 ui:nodegraph:node:pos = (-700, -300)
-        }
-
-        def Shader "UVCentered"
-        {
-            uniform token info:id = "ND_subtract_vector2"
-            float2 inputs:in1.connect = </Root/StereoscopicMaterial/Texcoord.outputs:out>
-            float2 inputs:in2.connect = </Root/StereoscopicMaterial/UVOffset.outputs:out>
-            float2 outputs:out
-            float2 ui:nodegraph:node:pos = (-500, -300)
-        }
-
-        def Shader "DistSq"
-        {
-            uniform token info:id = "ND_dotproduct_vector2"
-            float2 inputs:in1.connect = </Root/StereoscopicMaterial/UVCentered.outputs:out>
-            float2 inputs:in2.connect = </Root/StereoscopicMaterial/UVCentered.outputs:out>
-            float outputs:out
-            float2 ui:nodegraph:node:pos = (-300, -300)
-        }
-
-        def Shader "Dist"
-        {
-            uniform token info:id = "ND_sqrt_float"
-            float inputs:in.connect = </Root/StereoscopicMaterial/DistSq.outputs:out>
-            float outputs:out
-            float2 ui:nodegraph:node:pos = (-150, -300)
-        }
-
-        // -------------------------------------------------------
-        // 視野狭窄の半径計算
-        //
-        // UV の中心(0.5, 0.5)から隅(0,0)までの距離は sqrt(0.5^2 + 0.5^2) ≈ 0.707
-        // Radius が 0.707 以上だと画面全体が視野内に収まり、暗転しない。
-        //
-        // Radius = 0.5 * (1.0 - Intensity)
-        //   Intensity=0.0 → Radius=0.50（中程度）
-        //   Intensity=0.5 → Radius=0.25（中央付近まで暗転）
-        //   Intensity=1.0 → Radius=0.00（ほぼ全暗転）
-        //
-        // Edge = Radius + 0.1 でぼかし幅を持たせる。
-        // -------------------------------------------------------
-        def Shader "HalfConst"
-        {
-            uniform token info:id = "ND_constant_float"
-            float inputs:value = 0.5
-            float outputs:out
-            float2 ui:nodegraph:node:pos = (-550, -450)
-        }
-
-        // One - Intensity = 1.0 - Intensity
-        def Shader "OneMinusIntensity"
-        {
-            uniform token info:id = "ND_subtract_float"
-            float inputs:in1 = 1.0
-            float inputs:in2.connect = </Root/StereoscopicMaterial.inputs:Intensity>
-            float outputs:out
-            float2 ui:nodegraph:node:pos = (-400, -450)
-        }
-
-        // Radius = 0.5 * (1.0 - Intensity)
-        def Shader "Radius"
-        {
-            uniform token info:id = "ND_multiply_float"
-            float inputs:in1.connect = </Root/StereoscopicMaterial/HalfConst.outputs:out>
-            float inputs:in2.connect = </Root/StereoscopicMaterial/OneMinusIntensity.outputs:out>
-            float outputs:out
-            float2 ui:nodegraph:node:pos = (-250, -400)
-        }
-
-        // Edge = Radius + 0.08（ぼかし境界）
-        def Shader "Edge"
-        {
-            uniform token info:id = "ND_add_float"
-            float inputs:in1.connect = </Root/StereoscopicMaterial/Radius.outputs:out>
-            float inputs:in2 = 0.08
-            float outputs:out
-            float2 ui:nodegraph:node:pos = (-100, -440)
-        }
-
-        // smoothstep(in=Dist, low=Radius, high=Edge)
-        // Dist < Radius → 0（視野内）
-        // Dist > Edge   → 1（視野外）
-        // ※ 正順（low < high）で使い、後で 1-result で反転する
-        def Shader "SmoothOuter"
-        {
-            uniform token info:id = "ND_smoothstep_float"
-            float inputs:in.connect = </Root/StereoscopicMaterial/Dist.outputs:out>
-            float inputs:low.connect = </Root/StereoscopicMaterial/Radius.outputs:out>
-            float inputs:high.connect = </Root/StereoscopicMaterial/Edge.outputs:out>
-            float outputs:out
-            float2 ui:nodegraph:node:pos = (50, -380)
-        }
-
-        // VignetteMask = 1 - SmoothOuter
-        // → Dist < Radius → 1（視野内 = 見える）
-        // → Dist > Edge   → 0（視野外 = 完全暗転）
-        def Shader "VignetteMask"
-        {
-            uniform token info:id = "ND_subtract_float"
-            float inputs:in1 = 1.0
-            float inputs:in2.connect = </Root/StereoscopicMaterial/SmoothOuter.outputs:out>
-            float outputs:out
-            float2 ui:nodegraph:node:pos = (200, -380)
-        }
-
-        // -------------------------------------------------------
-        // 症状モードのオン/オフ切り替え
-        //
-        // 視野狭窄は ConditionMode == 1.0 のときだけ有効にする。
-        //
-        // 問題：smoothstep(0.5, 1.5, mode) では
-        //   mode=2（色覚異常）→ 1.0 になってしまい視野狭窄が誤発動する。
-        //
-        // 解決：「0.5 < mode < 1.5」をバンドパスフィルタで判定する。
-        //   StepLow  = step(0.5, mode)   → mode >= 0.5 なら 1.0
-        //   StepHigh = step(1.5, mode)   → mode >= 1.5 なら 1.0
-        //   VisualFieldActive = StepLow - StepHigh
-        //     mode=0 → 0 - 0 = 0（無効）
-        //     mode=1 → 1 - 0 = 1（有効）
-        //     mode=2 → 1 - 1 = 0（無効）
-        //
-        // Mix の式: F * mix + B * (1 - mix)
-        //   mix=1（視野狭窄）→ F = VignetteMask
-        //   mix=0（それ以外）→ B = 1.0（全開）
-        // -------------------------------------------------------
-
-        // step(0.5, mode) → mode >= 0.5 のとき 1.0
-        def Shader "StepLow"
-        {
-            uniform token info:id = "ND_step_float"
-            float inputs:edge = 0.5
-            float inputs:in.connect = </Root/StereoscopicMaterial.inputs:ConditionMode>
-            float outputs:out
-            float2 ui:nodegraph:node:pos = (0, -230)
-        }
-
-        // step(1.5, mode) → mode >= 1.5 のとき 1.0
-        def Shader "StepHigh"
-        {
-            uniform token info:id = "ND_step_float"
-            float inputs:edge = 1.5
-            float inputs:in.connect = </Root/StereoscopicMaterial.inputs:ConditionMode>
-            float outputs:out
-            float2 ui:nodegraph:node:pos = (0, -160)
-        }
-
-        // VisualFieldActive = StepLow - StepHigh（mode==1 のときだけ 1.0）
-        def Shader "VisualFieldActive"
-        {
-            uniform token info:id = "ND_subtract_float"
-            float inputs:in1.connect = </Root/StereoscopicMaterial/StepLow.outputs:out>
-            float inputs:in2.connect = </Root/StereoscopicMaterial/StepHigh.outputs:out>
-            float outputs:out
-            float2 ui:nodegraph:node:pos = (180, -195)
-        }
-
-        def Shader "EffectiveMask"
-        {
-            uniform token info:id = "ND_mix_float"
-            float inputs:fg.connect = </Root/StereoscopicMaterial/VignetteMask.outputs:out>
-            float inputs:bg = 1.0
-            float inputs:mix.connect = </Root/StereoscopicMaterial/VisualFieldActive.outputs:out>
-            float outputs:out
-            float2 ui:nodegraph:node:pos = (350, -270)
-        }
-
-        // -------------------------------------------------------
-        // 写真色 × EffectiveMask
-        //
-        // ND_mix_color3 を使って黒と写真色をブレンド。
-        //   fg = 写真色（見える色）
-        //   bg = 黒（0,0,0）
-        //   mix = EffectiveMask
-        //
-        // mix=1 → fg（写真色）= 見える
-        // mix=0 → bg（黒）    = 完全暗転
-        //
-        // ND_mix の式: F * mix + B * (1 - mix)
-        //   → fg * mask + (0,0,0) * (1 - mask) = fg * mask
-        // -------------------------------------------------------
-        def Shader "Black"
-        {
-            uniform token info:id = "ND_constant_color3"
-            color3f inputs:value = (0, 0, 0)
-            color3f outputs:out
-            float2 ui:nodegraph:node:pos = (350, -100)
-        }
-
-        def Shader "ApplyVignette"
-        {
-            uniform token info:id = "ND_mix_color3"
-            color3f inputs:fg.connect = </Root/StereoscopicMaterial/CameraIndexSwitch.outputs:out>
-            color3f inputs:bg.connect = </Root/StereoscopicMaterial/Black.outputs:out>
-            float inputs:mix.connect = </Root/StereoscopicMaterial/EffectiveMask.outputs:out>
-            color3f outputs:out
-            float2 ui:nodegraph:node:pos = (550, -100)
-        }
-
+        // アンリットサーフェスシェーダー（ライティングなしで表示）
         def Shader "UnlitSurface"
         {
             uniform token info:id = "ND_realitykit_unlit_surfaceshader"
-            color3f inputs:color.connect = </Root/StereoscopicMaterial/ApplyVignette.outputs:out>
+            color3f inputs:color.connect = </Root/StereoscopicMaterial/CameraIndexSwitch.outputs:out>
             bool inputs:applyPostProcessToneMap = 0
             bool inputs:hasPremultipliedAlpha = 0
             token outputs:out
-            float2 ui:nodegraph:node:pos = (800, 0)
+            float2 ui:nodegraph:node:pos = (200, 0)
         }
     }
 }

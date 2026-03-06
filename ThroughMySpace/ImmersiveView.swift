@@ -448,16 +448,23 @@ struct ImmersiveView: View {
         to entity: ModelEntity
     ) async {
         do {
-            // RealityKitContent バンドルから ShaderGraphMaterial をロード
+            // RealityKitContent バンドルのコンパイル済み Scene.reality から
+            // ShaderGraphMaterial をロードする
             //
-            // 【.reality ファイルの構造】
-            // RealityKitContent パッケージ内のすべての .usda は
-            // ビルド時に RealityKitContent.reality という単一ファイルにまとめられる。
-            // from: には拡張子なしのファイル名 "RealityKitContent" を指定する。
-            // named: には USDA 内のマテリアルの prim パス（"/Root/StereoscopicMaterial"）を指定する。
+            // 【ロード方法の解説】
+            // ShaderGraphMaterial(named:from:in:) の各引数：
+            //   named: Scene.usda 内のマテリアル prim フルパス
+            //         StereoscopicMaterial は Scene.usda の /Root/StereoscopicMaterial に
+            //         インライン参照されており、その中の Material prim パスが
+            //         /Root/StereoscopicMaterial/StereoscopicMaterial になる
+            //   from:  .rkassets 内の USDA ファイル名（拡張子なし）
+            //   in:    RealityKitContent パッケージのバンドル
+            //         コンパイル済み .reality ファイルを含むため
+            //         ND_RealityKitTexture2D / ND_realitykit_geometry_switch_cameraindex
+            //         などの RealityKit 固有ノードが正しく解決される
             var material = try await ShaderGraphMaterial(
-                named: "/Root/StereoscopicMaterial",
-                from: "RealityKitContent",
+                named: "/Root/StereoscopicMaterial/StereoscopicMaterial",
+                from: "Scene",
                 in: realityKitContentBundle
             )
 

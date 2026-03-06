@@ -4,7 +4,7 @@
 
 視覚症状（視野狭窄・色覚異常・白内障など）を、
 自分の空間写真を使って体験するvisionOSアプリ。
-詳細な仕様は `through-my-space-spec.md` を参照。
+詳細な仕様は `docs/through-my-space-spec.md` を参照。
 
 ---
 
@@ -29,57 +29,74 @@
 
 ## 実装ルール
 
-- 必ずフェーズ1から順番に実装する。フェーズ2以降は指示があるまで手をつけない
-- SwiftUI + RealityKit + Metal を使うこと
+- SwiftUI + RealityKit を使うこと
 - Full Immersion Space で体験させること
 - コメントは日本語で書くこと
 - 1ファイルが長くなりすぎないよう適切にファイルを分割すること
 
 ---
 
-## 最重要：空間写真の取り扱い
+## 最重要：空間写真の取り扱い（解決済み・要注意）
 
-空間写真は左目用・右目用の2枚の画像が1つのファイル（HEIC/QuickTime）にパッケージされている。
-**フェーズ1の最初のタスクとして、他の何よりも先にここを単独検証すること。**
-ここが失敗すると体験全体が崩れる。
+空間写真は左目用・右目用の2枚の画像が1つのファイル（HEIC）にパッケージされている。
 
+### 写真の取得方法
+
+`PHPickerConfiguration()` ではなく **`PHPickerConfiguration(photoLibrary: .shared())`** を使うこと。
+前者は NSItemProvider 経由で単一フレームのみ返す。後者は `assetIdentifier` が取得できるため
+`PHAssetResourceManager` で完全な HEIC バイナリが取得できる。
+
+```swift
+// 正しい取得方法
+var config = PHPickerConfiguration(photoLibrary: .shared())
+// → result.assetIdentifier → PHAsset → PHAssetResource → PHAssetResourceManager.requestData
 ```
-空間写真
-├── 左目用画像（Left Eye）
-└── 右目用画像（Right Eye）
+
+### 左右フレームの抽出方法
+
+**`kCGImagePropertyGroups` はインデックスごとのプロパティには存在しない。**
+`CGImageSourceCopyProperties`（ソース全体のプロパティ）に存在する。
+
+```swift
+// 正しい方法
+let sourceProps = CGImageSourceCopyProperties(imageSource, nil) as? [CFString: Any]
+let groups = sourceProps[kCGImagePropertyGroups] as? [[CFString: Any]]
+let group = groups.first(where: { ($0[kCGImagePropertyGroupType] as? String) == (kCGImagePropertyGroupTypeStereoPair as String) })
+let leftIndex  = group[kCGImagePropertyGroupImageIndexLeft]  as? Int  // 通常 0
+let rightIndex = group[kCGImagePropertyGroupImageIndexRight] as? Int  // 通常 1
+// → CGImageSourceCreateImageAtIndex(imageSource, leftIndex, ...)
 ```
 
-visionOS 2.0の `ViewpointComponent` を使って左右を出し分ける。
-左目には左用テクスチャを貼ったメッシュ、右目には右用テクスチャを貼ったメッシュをそれぞれ表示することで立体感を維持する。
+Vision Pro 撮影の空間写真（HEIC）の内部構造：
+- `compatible brands: MiHB` — Apple 空間写真のマーカー
+- `ster` グループ → `GroupImageIndexLeft=0`、`GroupImageIndexRight=1`
+- index 0: 左目 2560x2560（25タイル合成）
+- index 1: 右目 2560x2560（25タイル合成）
 
-**投影メッシュは球体ではなくドーム（前方のみ）を使うこと**
-空間写真は全天球ではなく約60〜80度の画角しかない。
-球体に貼ると背後が空白になり没入感が削がれる。
-ドーム状メッシュにすることで「見える範囲」に自然に収まる。
-ドーム外の背景は暗いグラデーションで馴染ませること。
+### 左右テクスチャの表示方法
+
+ShaderGraph の `ND_realitykit_geometry_switch_cameraindex_color3` ノード（CameraIndexSwitch）を使う。
+左目レンダリング時に `left` 入力を、右目レンダリング時に `right` 入力を自動選択する。
 
 ---
 
 ## シェーダーについての方針
 
-**基本方針：ShaderGraph（Reality Composer Pro）をメインに使い、複雑なロジックのみMetalのCustomNodeで補完する。**
-ShaderGraphはリアルタイムプレビューができるため開発効率が高い。Metalをゼロから書くのは最後の手段。
+**基本方針：Core Image（CPU 側）でフィルターを適用し、処理済みテクスチャをマテリアルに渡す。**
 
-- 色覚異常はBrettel 1997の行列変換をCustomNodeとして実装（医学的根拠のある手法）
-- 視野狭窄はsmoothstepで境界を柔らかくすること
-- 白内障はBloom効果（輝度抽出→ブラー→加算合成）でハレーションを表現すること。単純な白濁では安っぽく見える
-- 中心暗点・飛蚊症はアイトラッキング連動。視線位置（LookAt）を毎フレーム取得してシェーダーの `center` パラメータとして渡すこと
-- **視線の微振動対策**：生の視線位置をそのまま使うと暗点が震えて見える。前フレームとlerpでスムージングすること
+visionOS では Metal の CustomMaterial が使用不可なため、シェーダーは Core Image で実装する。
+
+- 視野狭窄：`CIVignetteEffect`
+- 色覚異常：`CIColorMatrix`（Brettel 1997 行列変換、3タイプ）
+- 白内障：`CIGaussianBlur` + Bloom（輝度抽出 → ブラー → 加算合成）+ 黄変
+- 網膜色素変性症：`CIRadialGradient` + `CIBlendWithMask`
+- 老眼：`CIGaussianBlur` + コントラスト調整
+- 乱視：`CIMotionBlur`（30度方向）+ 輝度マスク
+
+中心暗点・飛蚊症はアイトラッキング連動（未実装）：
+- 視線位置（LookAt）を毎フレーム取得して中心座標としてフィルターに渡す
+- **視線の微振動対策**：生の視線位置をそのまま使うと暗点が震えて見える。前フレームと lerp でスムージングすること
 - **毎フレームgaze取得のパフォーマンス**：実機で必ず検証すること。Vision Proは熱を持ちやすい
-- 症状の重ねがけはGPU負荷が急増するため、シェーダー合成順序の設計を慎重に行うこと
-
-## 球体の内側表示について
-
-`MeshResource.generateSphere` で生成した球体を内側から見るには法線の反転が必要。
-以下のいずれかの方法で実装すること。
-
-- `ShaderGraphMaterial` または `CustomMaterial` で `faceCulling = .none` を設定する
-- スケールを `[-1, 1, 1]` で反転する
 
 ---
 
@@ -101,35 +118,41 @@ ShaderGraphはリアルタイムプレビューができるため開発効率が
 
 ```
 ThroughMySpace/
-├── Models/
-│   └── Condition.swift
-├── Views/
-│   ├── ContentView.swift
-│   ├── PhotoSelectionView.swift
-│   ├── ImmersiveView.swift          # Full Immersion体験（症状選択UIを含む）
-│   ├── FloatingPanelView.swift      # 症状選択フローティングパネル
-│   └── InfoView.swift               # 症状説明（空間内に浮かぶ）
-├── Shaders/
-│   ├── VisualFieldShader.metal      # 視野狭窄
-│   ├── ColorBlindShader.metal       # 色覚異常（Brettel行列）
-│   ├── CentralScotoma.metal         # 中心暗点（アイトラッキング連動）
-│   ├── CataractShader.metal         # 白内障（Bloom効果）
-│   └── FloatersShader.metal         # 飛蚊症（アイトラッキング連動）
-├── Services/
-│   ├── SpatialPhotoService.swift    # 空間写真の読み込み・左右分離
-│   └── CameraService.swift          # アプリ内撮影
-└── Resources/
-    └── ConditionData.json           # 各症状のテキスト情報
+├── ThroughMySpace/               # アプリ本体
+│   ├── Models/
+│   │   └── Condition.swift       # 症状データモデル
+│   ├── Views/
+│   │   ├── ContentView.swift     # メイン画面・写真選択（SpatialPhotoPicker含む）
+│   │   ├── ImmersiveView.swift   # Full Immersion 体験本体
+│   │   ├── FloatingPanelView.swift
+│   │   ├── InfoView.swift
+│   │   └── EntryNoticeView.swift
+│   ├── Services/
+│   │   └── SpatialPhotoLoader.swift  # 空間写真の読み込み・左右分離
+│   ├── DomeMesh.swift            # 前方ドーム状メッシュ生成
+│   └── AppModel.swift            # グローバル状態管理
+├── Packages/RealityKitContent/   # Reality Composer Pro アセット
+│   └── .rkassets/Materials/
+│       └── StereoscopicMaterial.usda
+└── docs/                         # ドキュメント
+    ├── through-my-space-spec.md
+    └── app-store-metadata.md
 ```
 
 ---
 
 ## 現在の実装状況
 
-- [x] フェーズ1：ViewpointComponent左右分離 → 空間写真選択 → ドームメッシュ展開 → フローティングパネルUI → 視野狭窄 → 色覚異常 → シームレス切り替え → 強度調整 → 症状説明
-- [x] フェーズ1追加：白内障（Bloom効果）・網膜色素変性症（放射状マスク）を実装
-- [x] フェーズ1追加：日英ローカライゼーション対応（`Localizable.strings`）
-- [ ] フェーズ2：中心暗点（アイトラ＋スムージング）→ 飛蚊症（アイトラ）→ 老眼（近距離ぼかし）→ 乱視（方向ブレ）→ 症状の重ねがけ → 当事者コメント追加 → アプリ内撮影 → App Store申請
+- [x] フェーズ1：空間写真の左右分離（立体視）
+- [x] フェーズ1：PHPickerViewController + PHAssetResourceManager で完全 HEIC 取得
+- [x] フェーズ1：ドームメッシュ展開・Full Immersion Space 表示
+- [x] フェーズ1：フローティングパネルUI
+- [x] フェーズ1：視野狭窄・色覚異常・白内障・網膜色素変性症・老眼・乱視
+- [x] フェーズ1：症状説明 InfoView、体験開始免責事項 EntryNoticeView
+- [x] フェーズ1：日英ローカライゼーション
+- [ ] フェーズ2：中心暗点（アイトラッキング連動）
+- [ ] フェーズ2：飛蚊症（アイトラッキング連動）
+- [ ] フェーズ2：App Store 申請
 
 ### 実装済み症状一覧
 
@@ -152,3 +175,4 @@ ThroughMySpace/
 - 年齢制限：4+
 - 申請説明文：「視覚症状を自分の空間で体験する教育・共感ツール」
 - 免責事項をアプリ内に必ず表示すること
+- 詳細は `docs/app-store-metadata.md` を参照

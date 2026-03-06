@@ -20,26 +20,24 @@
 
 - **自分の空間で体験** — フォトライブラリの空間写真（Spatial Photo）をそのまま使用
 - **Full Immersion Space** — Vision Pro の没入空間で全周囲を包む体験
-- **立体感の保持** — 空間写真の左目用・右目用テクスチャを分離してドームに投影
+- **立体感の保持** — 空間写真の左右テクスチャを ShaderGraph の CameraIndexSwitch ノードで左右目に出し分け
 - **リアルタイム切り替え** — 症状・強度をフローティングパネルでその場で変更
+- **日英対応** — 端末の言語設定に応じて自動切り替え
 
 ---
 
 ## 対応する視覚症状
 
-### フェーズ 1（実装済み）
-
-| 症状 | 説明 |
-|---|---|
-| 視野狭窄（緑内障） | 周辺視野が失われていく体験。強度スライダーで段階調整 |
-| 色覚異常 | 赤緑色盲（第1・第2）、青黄色盲（第3）の3タイプ対応 |
-
-### フェーズ 2（実装予定）
-
-- 中心暗点（加齢黄斑変性）— アイトラッキング連動
-- 白内障 — Bloom 効果によるハレーション表現
-- 飛蚊症 — アイトラッキング連動
-- 網膜色素変性症
+| 症状 | 手法 | 状態 |
+|---|---|---|
+| 視野狭窄（緑内障） | CIVignetteEffect | ✅ 実装済み |
+| 色覚異常（3タイプ） | Brettel 1997 行列変換 | ✅ 実装済み |
+| 白内障 | CIGaussianBlur + Bloom + 黄変 | ✅ 実装済み |
+| 網膜色素変性症 | CIRadialGradient + CIBlendWithMask | ✅ 実装済み |
+| 老眼 | CIGaussianBlur + コントラスト調整 | ✅ 実装済み |
+| 乱視 | CIMotionBlur（30度）+ 輝度マスク | ✅ 実装済み |
+| 中心暗点 | アイトラッキング連動 | 🔜 実装予定 |
+| 飛蚊症 | アイトラッキング連動 | 🔜 実装予定 |
 
 ---
 
@@ -56,22 +54,34 @@
 ## 技術スタック
 
 - **SwiftUI** — UI
-- **RealityKit** — 3D 空間・ドームメッシュ
-- **Core Image** — 視覚フィルター（視野狭窄・色覚異常）
-- **PhotosUI** — 空間写真の読み込み
-- **Metal** — テクスチャ転送（MTLTexture → CGImage）
+- **RealityKit + ShaderGraph** — ドームメッシュ・左右テクスチャ切り替え（CameraIndexSwitch）
+- **Core Image** — 視覚フィルター（症状ごとの画像処理）
+- **PhotosUI + PHAssetResourceManager** — 空間写真の完全HEICデータ取得
 
-### フィルター実装について
-
-visionOS では `CustomMaterial`（Metal 直書き）が使用不可のため、CPU 側の Core Image でフィルターを適用し `UnlitMaterial` で表示する方式を採用。
+### フィルターパイプライン
 
 ```
-空間写真 (TextureResource)
-  → MTLTexture (rgba8Unorm_srgb)  ← sRGB保持のため
-  → CGImage
-  → Core Image フィルター適用
-  → TextureResource
-  → UnlitMaterial → ドームメッシュ
+空間写真（HEIC）
+  → PHAssetResourceManager で完全 HEIC 取得
+  → CGImageSourceCopyProperties で StereoPair グループを検出
+  → index 0 (Left) / index 1 (Right) を CGImageSourceCreateImageAtIndex で取得
+  → Core Image フィルター適用（症状ごとの処理）
+  → TextureResource（左右別々）
+  → ShaderGraph StereoscopicMaterial（CameraIndexSwitch で左右を自動振り分け）
+  → ドームメッシュに投影
+```
+
+### 空間写真の取り扱いで判明した重要事項
+
+`kCGImagePropertyGroups`（左右インデックス情報）は `CGImageSourceCopyPropertiesAtIndex`（インデックスごと）には**存在しない**。
+`CGImageSourceCopyProperties`（ソース全体のプロパティ）から取得し、`GroupImageIndexLeft` / `GroupImageIndexRight` でインデックス番号を得る。
+
+```swift
+// 正しい方法
+let sourceProps = CGImageSourceCopyProperties(imageSource, nil)
+let groups = sourceProps[kCGImagePropertyGroups]  // ← ここにある
+let leftIndex  = group[kCGImagePropertyGroupImageIndexLeft]   // 通常 0
+let rightIndex = group[kCGImagePropertyGroupImageIndexRight]  // 通常 1
 ```
 
 ---
@@ -80,18 +90,25 @@ visionOS では `CustomMaterial`（Metal 直書き）が使用不可のため、
 
 ```
 ThroughMySpace/
-├── Models/
-│   └── Condition.swift          # 症状データモデル
-├── Views/
-│   ├── ContentView.swift        # メイン画面・写真選択
-│   ├── ImmersiveView.swift      # Full Immersion 体験本体
-│   ├── FloatingPanelView.swift  # 症状選択フローティングパネル
-│   ├── InfoView.swift           # 症状説明（空間内に浮かぶ）
-│   └── EntryNoticeView.swift    # 体験開始時の免責事項カード
-├── Services/
-│   └── SpatialPhotoLoader.swift # 空間写真の読み込み・左右分離
-├── DomeMesh.swift               # 前方ドーム状メッシュ生成
-└── Packages/RealityKitContent/  # Reality Composer Pro アセット
+├── ThroughMySpace/
+│   ├── Models/
+│   │   └── Condition.swift              # 症状データモデル
+│   ├── Views/
+│   │   ├── ContentView.swift            # メイン画面・写真選択
+│   │   ├── ImmersiveView.swift          # Full Immersion 体験本体
+│   │   ├── FloatingPanelView.swift      # 症状選択フローティングパネル
+│   │   ├── InfoView.swift               # 症状説明（空間内に浮かぶ）
+│   │   └── EntryNoticeView.swift        # 体験開始時の免責事項カード
+│   ├── Services/
+│   │   └── SpatialPhotoLoader.swift     # 空間写真の読み込み・左右分離
+│   ├── DomeMesh.swift                   # 前方ドーム状メッシュ生成
+│   └── AppModel.swift                   # グローバル状態管理
+├── Packages/RealityKitContent/          # Reality Composer Pro アセット
+│   └── .rkassets/Materials/
+│       └── StereoscopicMaterial.usda    # 左右目切り替えシェーダー
+└── docs/                                # ドキュメント・GitHub Pages
+    ├── through-my-space-spec.md         # 仕様書
+    └── app-store-metadata.md            # App Store メタデータ
 ```
 
 ---

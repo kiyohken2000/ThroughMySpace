@@ -28,8 +28,11 @@ import UIKit
 // PHPickerConfiguration.selection = .continuous を使うと
 // タップした瞬間に即選択完了になる。
 //
-// PHAsset.fetchAssets はフォトライブラリのフルアクセス権限が必要。
-// 代わりに NSItemProvider からデータを直接取得する（権限不要）。
+// 空間写真の完全な HEIC（左右両フレーム入り）を取得するには
+// PHPickerConfiguration(photoLibrary: .shared()) で assetIdentifier を取得し、
+// PHAssetResourceManager 経由で元ファイルをそのまま読み出す必要がある。
+// NSItemProvider の loadFileRepresentation は単一フレームに変換された
+// データしか返さないため立体感が失われる。
 //
 // UIViewControllerRepresentable = React Native の NativeModules のように
 // UIKit のコンポーネントを SwiftUI から使うための橋渡し。
@@ -45,20 +48,18 @@ struct SpatialPhotoPicker: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> PHPickerViewController {
-        // PHPickerConfiguration() = フォトライブラリへのアクセス権限不要モード
-        // PHPickerConfiguration(photoLibrary: .shared()) だとフルアクセスが必要になる
-        var config = PHPickerConfiguration()
-
-        // .continuous はタップ即通知だが、visionOS の spatialMedia フィルタとの組み合わせで
-        // データ未準備のまま didFinishPicking が呼ばれクラッシュする事例があるため使わない。
-        // デフォルト（.default）を使い、確定ボタンで安全に確定させる。
-        config.selectionLimit = 1
-
         #if targetEnvironment(simulator)
+        // シミュレーターは PHAsset API が使えないため権限不要モード
+        var config = PHPickerConfiguration()
         config.filter = .images
         #else
+        // 実機: PHAsset 経由で完全 HEIC を取得するため photoLibrary を渡す
+        // これにより result.assetIdentifier が取得できるようになる
+        var config = PHPickerConfiguration(photoLibrary: .shared())
         config.filter = .spatialMedia  // 実機：空間写真のみ
         #endif
+
+        config.selectionLimit = 1
 
         let picker = PHPickerViewController(configuration: config)
         picker.delegate = context.coordinator
@@ -89,12 +90,91 @@ struct SpatialPhotoPicker: UIViewControllerRepresentable {
             }
 
             hasSelected = true
+            isPresented = false
 
-            // NSItemProvider からデータを直接取得（フォトライブラリ権限不要）
-            let provider = result.itemProvider
+            #if targetEnvironment(simulator)
+            // シミュレーター: NSItemProvider フォールバック
+            fallbackLoad(result.itemProvider)
+            #else
+            // 実機: PHAsset 経由で完全な HEIC を取得
+            // assetIdentifier は PHPickerConfiguration(photoLibrary: .shared()) のときのみ取得可能
+            if let assetIdentifier = result.assetIdentifier {
+                Task.detached(priority: .userInitiated) { [weak self] in
+                    await self?.loadViaAssetResource(assetIdentifier: assetIdentifier)
+                }
+            } else {
+                // assetIdentifier が nil の場合（iCloud 写真など）はフォールバック
+                print("⚠️ assetIdentifier が nil。NSItemProvider にフォールバック")
+                fallbackLoad(result.itemProvider)
+            }
+            #endif
+        }
 
-            // 空間写真は HEIC なので "public.heic" を優先、
-            // それがなければ汎用 "public.image" にフォールバック
+        // ------------------------------------------------------------------
+        // PHAssetResourceManager 経由で完全な HEIC を取得
+        //
+        // NSItemProvider.loadFileRepresentation は空間写真を単一フレームに
+        // 変換して返すため、左右の両フレームを含む元ファイルが必要なときは
+        // PHAssetResourceManager.requestData を使う。
+        // ------------------------------------------------------------------
+        @MainActor
+        private func loadViaAssetResource(assetIdentifier: String) async {
+            // assetIdentifier → PHAsset を取得
+            let fetchResult = PHAsset.fetchAssets(
+                withLocalIdentifiers: [assetIdentifier],
+                options: nil
+            )
+            guard let asset = fetchResult.firstObject else {
+                print("⚠️ PHAsset が見つからない: \(assetIdentifier)")
+                return
+            }
+
+            // PHAsset に紐づくリソース一覧から「photo」タイプを取得
+            // 空間写真の場合 .photo が元の HEIC ファイルに対応する
+            // PHAsset のメディアサブタイプを確認（空間写真かどうかの判定）
+            // PHAssetMediaSubtype.spatialMedia = 8192 (0x2000)
+            let isSpatial = asset.mediaSubtypes.contains(.spatialMedia)
+            print("📷 PHAsset mediaType=\(asset.mediaType.rawValue) mediaSubtypes=\(asset.mediaSubtypes.rawValue) isSpatial=\(isSpatial)")
+
+            let resources = PHAssetResource.assetResources(for: asset)
+            print("📁 PHAssetResource 一覧: \(resources.map { "\($0.originalFilename) type=\($0.type.rawValue)" })")
+
+            guard let photoResource = resources.first(where: { $0.type == .photo }) else {
+                print("⚠️ photo タイプのリソースが見つからない")
+                return
+            }
+
+            print("📁 使用リソース: \(photoResource.originalFilename) type=\(photoResource.type.rawValue)")
+
+            // requestData でファイルデータをチャンク単位で受け取って結合する
+            var imageData = Data()
+            let manager = PHAssetResourceManager.default()
+            let options = PHAssetResourceRequestOptions()
+            options.isNetworkAccessAllowed = true  // iCloud フォトも取得できるよう許可
+
+            do {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    manager.requestData(for: photoResource, options: options) { chunk in
+                        imageData.append(chunk)
+                    } completionHandler: { error in
+                        if let error {
+                            continuation.resume(throwing: error)
+                        } else {
+                            continuation.resume()
+                        }
+                    }
+                }
+                print("✅ PHAssetResourceManager: \(imageData.count) bytes")
+                onSelect(imageData)
+            } catch {
+                print("⚠️ PHAssetResourceManager 取得失敗: \(error)")
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // NSItemProvider フォールバック（シミュレーター・iCloud 写真など）
+        // ------------------------------------------------------------------
+        private func fallbackLoad(_ provider: NSItemProvider) {
             let typeIdentifier: String
             if provider.hasItemConformingToTypeIdentifier("public.heic") {
                 typeIdentifier = "public.heic"
@@ -102,18 +182,18 @@ struct SpatialPhotoPicker: UIViewControllerRepresentable {
                 typeIdentifier = "public.image"
             }
 
-            // ピッカーを先に閉じてから非同期でデータ取得する
-            // データ取得完了を待ってから閉じると UI がフリーズして見えるため
-            isPresented = false
-
-            provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { [weak self] data, error in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    if let data {
-                        self.onSelect(data)
-                    } else {
-                        print("⚠️ 写真データの取得失敗: \(error?.localizedDescription ?? "不明")")
-                    }
+            provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { [weak self] url, error in
+                guard let url else {
+                    print("⚠️ Fallback 写真データの取得失敗: \(error?.localizedDescription ?? "不明")")
+                    return
+                }
+                guard let data = try? Data(contentsOf: url) else {
+                    print("⚠️ Fallback ファイルの読み込み失敗: \(url)")
+                    return
+                }
+                print("✅ Fallback loadFileRepresentation: \(data.count) bytes")
+                DispatchQueue.main.async { [weak self] in
+                    self?.onSelect(data)
                 }
             }
         }

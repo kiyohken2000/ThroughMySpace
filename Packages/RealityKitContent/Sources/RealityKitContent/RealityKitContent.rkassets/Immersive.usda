@@ -7,7 +7,7 @@
 
 def Xform "Root"
 {
-    reorder nameChildren = ["Sphere_Left", "Sphere_Right", "GridMaterial"]
+    reorder nameChildren = ["Sphere_Left", "Sphere_Right", "GridMaterial", "StereoscopicMaterial", "StereoscopicSphere"]
     def Sphere "Sphere_Right" (
         active = true
         prepend apiSchemas = ["MaterialBindingAPI"]
@@ -45,6 +45,28 @@ def Xform "Root"
     {
         float3 xformOp:scale = (1, 1, 1)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+    }
+
+    // StereoscopicMaterial: CameraIndexSwitch で左右目に別テクスチャを表示するマテリアル
+    // ダミーメッシュにバインドすることで .reality に compiledmaterial として登録される
+    def "StereoscopicMaterial" (
+        active = true
+        prepend references = @Materials/StereoscopicMaterial.usda@
+    )
+    {
+    }
+
+    def Sphere "StereoscopicSphere" (
+        active = true
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/StereoscopicMaterial/StereoscopicMaterial> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double radius = 0.001
+        float3 xformOp:translate = (100, 100, 100)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 }
 

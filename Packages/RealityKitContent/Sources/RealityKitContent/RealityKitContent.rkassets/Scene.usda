@@ -7,7 +7,7 @@
 
 def Xform "Root"
 {
-    reorder nameChildren = ["GridMaterial", "Sphere"]
+    reorder nameChildren = ["GridMaterial", "Sphere", "StereoscopicMaterial"]
     rel material:binding = None (
         bindMaterialAs = "weakerThanDescendants"
     )
@@ -54,6 +54,28 @@ def Xform "Root"
     {
         float3 xformOp:scale = (1, 1, 1)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+    }
+
+    def "StereoscopicMaterial" (
+        active = true
+        prepend references = @Materials/StereoscopicMaterial.usda@
+    )
+    {
+    }
+
+    // StereoscopicMaterial をマテリアルアセットとしてコンパイルさせるためのダミーメッシュ
+    // このメッシュに StereoscopicMaterial をバインドすることで .reality 内に compiledmaterial が生成される
+    def Sphere "StereoscopicSphere" (
+        active = true
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/StereoscopicMaterial/StereoscopicMaterial> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        double radius = 0.001
+        float3 xformOp:translate = (100, 100, 100)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 }
 

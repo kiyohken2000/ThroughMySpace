@@ -1,0 +1,41 @@
+#usda 1.0
+(
+    defaultPrim = "Root"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+def Xform "Root"
+{
+    def Material "TestMaterial"
+    {
+        // プロモートされた入力としてテクスチャを宣言
+        asset inputs:MyTexture = @@
+
+        token outputs:mtlx:surface.connect = </Root/TestMaterial/PreviewSurface.outputs:out>
+        token outputs:realitykit:vertex
+
+        def Shader "Texcoord"
+        {
+            uniform token info:id = "ND_texcoord_vector2"
+            int inputs:index = 0
+            float2 outputs:out
+        }
+
+        def Shader "ImageSampler"
+        {
+            uniform token info:id = "ND_image_color3"
+            asset inputs:file.connect = </Root/TestMaterial.inputs:MyTexture>
+            float2 inputs:texcoord.connect = </Root/TestMaterial/Texcoord.outputs:out>
+            string inputs:filtertype = "linear"
+            color3f outputs:out
+        }
+
+        def Shader "PreviewSurface"
+        {
+            uniform token info:id = "ND_UsdPreviewSurface_surfaceshader"
+            color3f inputs:diffuseColor.connect = </Root/TestMaterial/ImageSampler.outputs:out>
+            token outputs:out
+        }
+    }
+}

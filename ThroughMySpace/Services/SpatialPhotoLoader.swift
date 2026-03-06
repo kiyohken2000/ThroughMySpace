@@ -118,41 +118,55 @@ class SpatialPhotoLoader {
 
     // ------------------------------------------------------------------
     // CGImageSource から左右画像を抽出する
-    // 空間写真なら kCGImagePropertyGroups で判定
-    // 通常写真なら index 0 を left として返す
+    //
+    // 【重要】kCGImagePropertyGroups はインデックスごとのプロパティではなく
+    // CGImageSource 全体のプロパティに格納されている。
+    //
+    // 正しい取得方法：
+    //   CGImageSourceCopyProperties（引数なし）→ {Groups} キー
+    //   → GroupImageIndexLeft / GroupImageIndexRight でインデックスを取得
+    //   → CGImageSourceCreateImageAtIndex でそのインデックスの画像を取得
+    //
+    // 誤った方法（旧実装）：
+    //   CGImageSourceCopyPropertiesAtIndex → kCGImagePropertyGroups は常に nil
     // ------------------------------------------------------------------
     private nonisolated func extractStereoImages(from imageSource: CGImageSource) -> (left: CGImage?, right: CGImage?) {
         let imageCount = CGImageSourceGetCount(imageSource)
-        var leftImage: CGImage?
-        var rightImage: CGImage?
+        print("📷 CGImageSourceGetCount: \(imageCount)")
 
         // kCGImageSourceShouldCacheImmediately: true を指定することで
         // CGImageSource が解放される前にピクセルデータを強制デコードする。
-        // これにより imageSource のライフタイムに依存しない独立した CGImage になる。
-        // リリースビルド（最適化あり）で imageSource が早期解放されてもデータが失われない。
         let decodeOptions: [CFString: Any] = [
             kCGImageSourceShouldCacheImmediately: true
         ]
 
-        for index in 0..<imageCount {
-            guard let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, index, nil)
-                    as? [CFString: Any] else { continue }
+        // ----------------------------------------------------------
+        // ソースレベルのプロパティから {Groups} を取得
+        // CGImageSourceCopyProperties（インデックスなし）を使う
+        // ----------------------------------------------------------
+        if let sourceProps = CGImageSourceCopyProperties(imageSource, nil) as? [CFString: Any],
+           let groups = sourceProps[kCGImagePropertyGroups] as? [[CFString: Any]],
+           let group = groups.first(where: {
+               ($0[kCGImagePropertyGroupType] as? String) == (kCGImagePropertyGroupTypeStereoPair as String)
+           }) {
+            // GroupImageIndexLeft / GroupImageIndexRight = 左右のインデックス番号
+            let leftIndex  = (group[kCGImagePropertyGroupImageIndexLeft]  as? Int) ?? 0
+            let rightIndex = (group[kCGImagePropertyGroupImageIndexRight] as? Int) ?? 1
+            print("📷 StereoPair検出: leftIndex=\(leftIndex) rightIndex=\(rightIndex)")
 
-            // kCGImagePropertyGroups = 空間写真の左右ペア情報
-            if let groups = properties[kCGImagePropertyGroups] as? [[CFString: Any]],
-               let group = groups.first {
-                let isLeft  = group[kCGImagePropertyGroupImageIsLeftImage]  as? Bool ?? false
-                let isRight = group[kCGImagePropertyGroupImageIsRightImage] as? Bool ?? false
-                guard let cgImage = CGImageSourceCreateImageAtIndex(imageSource, index, decodeOptions as CFDictionary) else { continue }
-                if isLeft  { leftImage  = cgImage }
-                if isRight { rightImage = cgImage }
-            } else if index == 0, leftImage == nil {
-                // グループ情報がない通常写真は index 0 を使う
-                leftImage = CGImageSourceCreateImageAtIndex(imageSource, index, decodeOptions as CFDictionary)
-            }
+            let leftImage  = CGImageSourceCreateImageAtIndex(imageSource, leftIndex,  decodeOptions as CFDictionary)
+            let rightImage = CGImageSourceCreateImageAtIndex(imageSource, rightIndex, decodeOptions as CFDictionary)
+            print("📷 抽出結果: left=\(leftImage != nil) right=\(rightImage != nil)")
+            return (leftImage, rightImage)
         }
 
-        return (leftImage, rightImage)
+        // ----------------------------------------------------------
+        // フォールバック: {Groups} がない通常写真は index 0 を使う
+        // ----------------------------------------------------------
+        print("📷 Groups なし（通常写真）→ index 0 を left として使用")
+        let fallback = CGImageSourceCreateImageAtIndex(imageSource, 0, decodeOptions as CFDictionary)
+        print("📷 抽出結果: left=\(fallback != nil) right=false")
+        return (fallback, nil)
     }
 
     // ------------------------------------------------------------------
