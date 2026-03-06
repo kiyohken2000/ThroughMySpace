@@ -7,14 +7,16 @@
 //
 // 【visionOS のマテリアル制約について】
 // visionOS では CustomMaterial（Metal シェーダー直書き）が使用不可。
-// ShaderGraph（USDA/Reality Composer Pro）は .reality コンパイルの問題あり。
 //
-// 【採用した方針：CPU フィルタリング + UnlitMaterial】
+// 【採用した方針：CPU フィルタリング + ShaderGraphMaterial（立体視対応）】
 // Core Image を使って視野狭窄・色覚異常フィルターを Swift 側で適用し、
-// 処理済みの画像を TextureResource として UnlitMaterial に渡す。
+// 処理済みの画像を TextureResource として ShaderGraphMaterial の
+// LeftTexture / RightTexture に渡す。
+// ShaderGraphMaterial の CameraIndexSwitch ノードが左右目に
+// 別々のテクスチャを表示することで立体感を維持する。
 //
 // 【パフォーマンス設計】
-// ・写真の CGImage 抽出（重い処理）は初回のみ → @State に保存
+// ・写真の CGImage 抽出（重い処理）は初回のみ → AppModel.sourceStereoImages に保存
 // ・症状変更時はその CGImage にフィルターをかけるだけ（軽い処理）
 // これにより強度スライダーの変更がスムーズに反映される。
 
@@ -294,10 +296,11 @@ struct ImmersiveView: View {
     // テクスチャと症状設定をドームに適用する
     //
     // 【処理の流れ】
-    // 1. 症状が「なし」なら元テクスチャをそのまま使う
-    // 2. 症状あり → appModel.sourceStereoImages の CGImage にフィルターをかける
-    // 3. フィルター済み CGImage から TextureResource を生成
-    // 4. UnlitMaterial に設定してドームに適用
+    // 1. 症状が「なし」なら元テクスチャをそのまま左右に使う
+    // 2. 症状あり → appModel.sourceStereoImages の左右 CGImage に同じフィルターをかける
+    // 3. フィルター済み左右 CGImage から TextureResource を生成
+    // 4. ShaderGraphMaterial（StereoscopicMaterial）に設定してドームに適用
+    //    → CameraIndexSwitch ノードが左目/右目に別テクスチャを表示し立体感を維持
     //
     // 【なぜ TextureResource → CGImage 変換を廃止したか】
     // TextureResource.copy(to: MTLTexture) → getBytes() のパスは
@@ -321,94 +324,156 @@ struct ImmersiveView: View {
 
         // 症状なし → 元テクスチャをそのまま適用（フィルター不要）
         if setting.type == .none {
-            applyUnlit(texture: textures.left, to: entity)
+            await applyStereoMaterial(left: textures.left, right: textures.right, to: entity)
             print("✅ マテリアル更新: 症状なし")
             return
         }
 
         // フィルターをかけるための元 CGImage を取得
         // AppModel に保存された元画像を直接使う（GPU → CPU 変換コストなし）
-        guard let cgImage = appModel.sourceStereoImages?.left else {
+        guard let stereoImages = appModel.sourceStereoImages else {
             // CGImage が未設定の場合は元テクスチャをそのまま使う
             print("⚠️ sourceStereoImages 未設定、元テクスチャを使用")
-            applyUnlit(texture: textures.left, to: entity)
+            await applyStereoMaterial(left: textures.left, right: textures.right, to: entity)
             return
         }
 
-        // フィルターを適用した CIImage を生成
-        let ciImage = CIImage(cgImage: cgImage)
-        let filteredCI: CIImage
+        // 左目・右目それぞれの CIImage を生成
+        let leftCI  = CIImage(cgImage: stereoImages.left)
+        let rightCI = CIImage(cgImage: stereoImages.right)
+
+        // 左目・右目に同じフィルターをかける
+        // （症状は両眼に同じように現れる）
+        let filteredLeft: CIImage
+        let filteredRight: CIImage
 
         switch setting.type {
         case .none:
             // ここには来ない（上でreturnしている）
-            filteredCI = ciImage
+            filteredLeft  = leftCI
+            filteredRight = rightCI
 
         case .visualField:
-            filteredCI = applyVignetteFilter(to: ciImage, intensity: setting.intensity.value)
+            filteredLeft  = applyVignetteFilter(to: leftCI,  intensity: setting.intensity.value)
+            filteredRight = applyVignetteFilter(to: rightCI, intensity: setting.intensity.value)
 
         case .colorBlind:
-            filteredCI = applyColorBlindFilter(
-                to: ciImage,
-                type: setting.colorBlindType,
-                intensity: setting.intensity.value
-            )
+            filteredLeft  = applyColorBlindFilter(to: leftCI,  type: setting.colorBlindType, intensity: setting.intensity.value)
+            filteredRight = applyColorBlindFilter(to: rightCI, type: setting.colorBlindType, intensity: setting.intensity.value)
 
         case .cataract:
-            filteredCI = applyCataractFilter(to: ciImage, intensity: setting.intensity.value)
+            filteredLeft  = applyCataractFilter(to: leftCI,  intensity: setting.intensity.value)
+            filteredRight = applyCataractFilter(to: rightCI, intensity: setting.intensity.value)
 
         case .retinitispigmentosa:
-            filteredCI = applyRetinitisFilter(to: ciImage, intensity: setting.intensity.value)
+            filteredLeft  = applyRetinitisFilter(to: leftCI,  intensity: setting.intensity.value)
+            filteredRight = applyRetinitisFilter(to: rightCI, intensity: setting.intensity.value)
 
         case .presbyopia:
-            filteredCI = applyPresbyopiaFilter(to: ciImage, intensity: setting.intensity.value)
+            filteredLeft  = applyPresbyopiaFilter(to: leftCI,  intensity: setting.intensity.value)
+            filteredRight = applyPresbyopiaFilter(to: rightCI, intensity: setting.intensity.value)
 
         case .astigmatism:
-            filteredCI = applyAstigmatismFilter(to: ciImage, intensity: setting.intensity.value)
+            filteredLeft  = applyAstigmatismFilter(to: leftCI,  intensity: setting.intensity.value)
+            filteredRight = applyAstigmatismFilter(to: rightCI, intensity: setting.intensity.value)
 
         case .scotoma:
             // Entity オーバーレイ方式で実装するため、ドームには何もしない
-            filteredCI = ciImage
+            filteredLeft  = leftCI
+            filteredRight = rightCI
 
         case .floaters:
             // Entity オーバーレイ方式で実装するため、ドームには何もしない
-            filteredCI = ciImage
+            filteredLeft  = leftCI
+            filteredRight = rightCI
         }
 
         // キャンセルチェック（重い処理の後）
         if Task.isCancelled { return }
 
-        // CIImage → CGImage → TextureResource
-        let extent = filteredCI.extent
-        guard let outputCGImage = ciContext.createCGImage(filteredCI, from: extent) else {
-            print("⚠️ CIContext.createCGImage 失敗、元テクスチャを使用")
-            applyUnlit(texture: textures.left, to: entity)
+        // 左目：CIImage → CGImage → TextureResource
+        guard let leftCGImage = ciContext.createCGImage(filteredLeft, from: filteredLeft.extent) else {
+            print("⚠️ CIContext.createCGImage（左目）失敗、元テクスチャを使用")
+            await applyStereoMaterial(left: textures.left, right: textures.right, to: entity)
             return
         }
 
+        // 右目：CIImage → CGImage → TextureResource
+        guard let rightCGImage = ciContext.createCGImage(filteredRight, from: filteredRight.extent) else {
+            print("⚠️ CIContext.createCGImage（右目）失敗、元テクスチャを使用")
+            await applyStereoMaterial(left: textures.left, right: textures.right, to: entity)
+            return
+        }
+
+        if Task.isCancelled { return }
+
         do {
-            let filteredTexture = try await TextureResource(
-                image: outputCGImage,
+            let leftTexture = try await TextureResource(
+                image: leftCGImage,
                 withName: nil,
                 options: .init(semantic: .color)
             )
-            applyUnlit(texture: filteredTexture, to: entity)
+            let rightTexture = try await TextureResource(
+                image: rightCGImage,
+                withName: nil,
+                options: .init(semantic: .color)
+            )
+            await applyStereoMaterial(left: leftTexture, right: rightTexture, to: entity)
             print("✅ マテリアル更新: mode=\(setting.type.rawValue), intensity=\(setting.intensity.value)")
         } catch {
             print("⚠️ TextureResource 生成失敗: \(error)")
-            applyUnlit(texture: textures.left, to: entity)
+            await applyStereoMaterial(left: textures.left, right: textures.right, to: entity)
         }
     }
 
     // ------------------------------------------------------------------
-    // UnlitMaterial にテクスチャを設定してエンティティに適用するヘルパー
+    // ShaderGraphMaterial（StereoscopicMaterial）に左右テクスチャを設定して
+    // エンティティに適用するヘルパー
+    //
+    // 【立体視の仕組み】
+    // RealityKitContent バンドルからコンパイル済みの StereoscopicMaterial を読み込み、
+    // LeftTexture / RightTexture パラメータに左右テクスチャをセットする。
+    // マテリアル内の CameraIndexSwitch（ND_realitykit_geometry_switch_cameraindex_color3）
+    // ノードが左目レンダリング時は LeftTexture、右目レンダリング時は RightTexture を
+    // 自動的に選択するため、両眼に別の画像が表示されて立体感が生まれる。
+    //
+    // 【ShaderGraphMaterial ロードに失敗した場合のフォールバック】
+    // UnlitMaterial（左テクスチャのみ）で表示する。
+    // 立体感は失われるが表示は維持される。
     // ------------------------------------------------------------------
     @MainActor
-    private func applyUnlit(texture: TextureResource, to entity: ModelEntity) {
-        var material = UnlitMaterial()
-        material.color = .init(texture: .init(texture))
-        material.faceCulling = .none
-        entity.model?.materials = [material]
+    private func applyStereoMaterial(
+        left: TextureResource,
+        right: TextureResource,
+        to entity: ModelEntity
+    ) async {
+        do {
+            // RealityKitContent バンドルから ShaderGraphMaterial をロード
+            // "StereoscopicMaterial" は StereoscopicMaterial.usda で定義された
+            // マテリアル名（.reality にコンパイルされたもの）
+            var material = try await ShaderGraphMaterial(
+                named: "/Root/StereoscopicMaterial",
+                from: "Materials/StereoscopicMaterial",
+                in: realityKitContentBundle
+            )
+
+            // 左目テクスチャをセット
+            try material.setParameter(name: "LeftTexture",  value: .textureResource(left))
+            // 右目テクスチャをセット
+            try material.setParameter(name: "RightTexture", value: .textureResource(right))
+
+            // 内側から見えるよう両面描画（ドームの内面に貼るため）
+            material.faceCulling = .none
+
+            entity.model?.materials = [material]
+        } catch {
+            // ShaderGraphMaterial ロード失敗時は UnlitMaterial（単眼）にフォールバック
+            print("⚠️ ShaderGraphMaterial ロード失敗、UnlitMaterial で表示: \(error)")
+            var fallback = UnlitMaterial()
+            fallback.color = .init(texture: .init(left))
+            fallback.faceCulling = .none
+            entity.model?.materials = [fallback]
+        }
     }
 
     // ------------------------------------------------------------------
