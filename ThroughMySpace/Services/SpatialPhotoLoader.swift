@@ -126,6 +126,14 @@ class SpatialPhotoLoader {
         var leftImage: CGImage?
         var rightImage: CGImage?
 
+        // kCGImageSourceShouldCacheImmediately: true を指定することで
+        // CGImageSource が解放される前にピクセルデータを強制デコードする。
+        // これにより imageSource のライフタイムに依存しない独立した CGImage になる。
+        // リリースビルド（最適化あり）で imageSource が早期解放されてもデータが失われない。
+        let decodeOptions: [CFString: Any] = [
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+
         for index in 0..<imageCount {
             guard let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, index, nil)
                     as? [CFString: Any] else { continue }
@@ -135,12 +143,12 @@ class SpatialPhotoLoader {
                let group = groups.first {
                 let isLeft  = group[kCGImagePropertyGroupImageIsLeftImage]  as? Bool ?? false
                 let isRight = group[kCGImagePropertyGroupImageIsRightImage] as? Bool ?? false
-                guard let cgImage = CGImageSourceCreateImageAtIndex(imageSource, index, nil) else { continue }
+                guard let cgImage = CGImageSourceCreateImageAtIndex(imageSource, index, decodeOptions as CFDictionary) else { continue }
                 if isLeft  { leftImage  = cgImage }
                 if isRight { rightImage = cgImage }
             } else if index == 0, leftImage == nil {
                 // グループ情報がない通常写真は index 0 を使う
-                leftImage = CGImageSourceCreateImageAtIndex(imageSource, index, nil)
+                leftImage = CGImageSourceCreateImageAtIndex(imageSource, index, decodeOptions as CFDictionary)
             }
         }
 
