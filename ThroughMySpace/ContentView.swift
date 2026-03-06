@@ -233,9 +233,19 @@ struct ContentView: View {
 
         do {
             let loader = SpatialPhotoLoader()
-            let stereoPair = try loader.loadStereoImages(from: data)
+
+            // 【重要】CGImageSourceCreateWithData などの重い画像パース処理を
+            // バックグラウンドスレッドで実行する。
+            // メインスレッドで大きな空間写真（数十MB）を同期処理すると
+            // ウォッチドッグタイムアウトでクラッシュすることがある。
+            // loader は nonisolated メソッドを持つため、detached から安全に呼べる。
+            let stereoPair = try await Task.detached(priority: .userInitiated) {
+                return try loader.loadStereoImages(from: data)
+            }.value
 
             // CGImage → TextureResource（GPUテクスチャ）
+            // 左右を順番に生成し、CGImage の参照を早期に手放してメモリを節約する。
+            // 同時生成するとピーク時のメモリ使用量が倍になり OOM kill されることがある。
             let leftTexture = try await loader.makeTextureResource(
                 from: stereoPair.left,
                 name: "SpatialLeft"

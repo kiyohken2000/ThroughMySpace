@@ -81,9 +81,13 @@ class SpatialPhotoLoader {
 
     // ------------------------------------------------------------------
     // Data から直接 StereoImagePair を取得する
-    // PHAsset 経由が使えないシミュレーター向けのフォールバック
+    //
+    // nonisolated にすることで Task.detached（バックグラウンドスレッド）から
+    // 呼び出せる。CGImageSource API はスレッドセーフなので問題ない。
+    // メインスレッドで大きな画像をパースするとウォッチドッグに殺されるため、
+    // 必ずバックグラウンドから呼ぶこと。
     // ------------------------------------------------------------------
-    func loadStereoImages(from data: Data) throws -> StereoImagePair {
+    nonisolated func loadStereoImages(from data: Data) throws -> StereoImagePair {
         print("✅ Data から ImageSource を生成: \(data.count) bytes")
 
         guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil) else {
@@ -117,7 +121,7 @@ class SpatialPhotoLoader {
     // 空間写真なら kCGImagePropertyGroups で判定
     // 通常写真なら index 0 を left として返す
     // ------------------------------------------------------------------
-    private func extractStereoImages(from imageSource: CGImageSource) -> (left: CGImage?, right: CGImage?) {
+    private nonisolated func extractStereoImages(from imageSource: CGImageSource) -> (left: CGImage?, right: CGImage?) {
         let imageCount = CGImageSourceGetCount(imageSource)
         var leftImage: CGImage?
         var rightImage: CGImage?
