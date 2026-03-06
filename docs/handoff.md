@@ -1,16 +1,17 @@
 # 次セッション引き継ぎドキュメント
 
-最終更新: 2026-03-06
+最終更新: 2026-03-06（App Store 審査提出済み）
 
 ---
 
 ## 現在の状態
 
-フェーズ1 **完了**。アプリは実機（Apple Vision Pro）で正常に動作している。
+フェーズ1・フェーズ2（中心暗点・飛蚊症）**完了**。アプリは実機（Apple Vision Pro）で正常に動作している。
 
 - 空間写真の立体視（左右目の分離・CameraIndexSwitch による表示）が正しく動作
-- 8症状のうち6症状を実装済み
+- 8症状すべて実装済み（うち2症状はヘッドトラッキング連動の Entity オーバーレイ方式）
 - 日英ローカライゼーション対応済み
+- **App Store 審査提出済み・審査待ち**
 
 ---
 
@@ -78,34 +79,56 @@ uvs.append(SIMD2<Float>(ht, 1.0 - vt))  // 1.0 - vt で上下反転
 
 ---
 
-## 次に実装すべきこと（フェーズ2）
+## 次に実装すべきこと
 
-### 優先度高
+### 現状
 
-**中心暗点（Central Scotoma）**
-- ARKit のアイトラッキングで視線位置（LookAt）を毎フレーム取得
-- UV 座標に変換して Core Image フィルターの中心座標として渡す
-- **視線スムージング必須**: `lerp(prevGaze, currentGaze, 0.15)` 程度でスムージングしないと暗点が震えて見える
-- `ImmersiveView` の RealityKit `.update` クロージャでフレームごとに処理
+**App Store 審査提出済み・審査待ち**
+- 審査が通り次第リリース
+- リジェクトされた場合は `docs/app-store-metadata.md` を参照して対応する
+
+---
+
+## 実装済みの全症状
+
+| 症状 | 手法 |
+|---|---|
+| 視野狭窄（緑内障） | CIVignetteEffect |
+| 色覚異常（3タイプ） | Brettel 1997 行列変換（CIColorMatrix） |
+| 白内障 | CIGaussianBlur + Bloom（輝度抽出→ブラー→加算）+ 黄変 |
+| 網膜色素変性症 | CIRadialGradient + CIBlendWithMask |
+| 老眼 | CIGaussianBlur + コントラスト調整 |
+| 乱視 | CIMotionBlur（30度）+ 輝度マスク |
+| 中心暗点 | ARKit WorldTracking + Entity オーバーレイ（α=0.15 スムージング） |
+| 飛蚊症 | ARKit WorldTracking + Entity オーバーレイ（α=0.04 遅延追従） |
+
+### 中心暗点・飛蚊症の実装アーキテクチャ
+
+CI フィルター方式（毎フレームのテクスチャ再生成）ではリアルタイム追従が不可能なため、
+**RealityKit Entity オーバーレイ方式**を採用。
 
 ```swift
-// アイトラッキングの取得例（概要）
-// ARKitSession + WorldTrackingProvider + DeviceAnchor を使う
-// device anchor の向きから視線方向を計算し、ドームメッシュの UV 座標に変換
+// ARKit WorldTrackingProvider でヘッドの向きを 60fps で取得
+let anchor = worldTracking.queryDeviceAnchor(atTimestamp: CACurrentMediaTime())
+let matrix = anchor.originFromAnchorTransform
+
+// ヘッド前方ベクトル（-Z 軸）
+let rawForward = SIMD3<Float>(-matrix.columns.2.x, -matrix.columns.2.y, -matrix.columns.2.z)
+
+// 中心暗点用スムージング（α=0.15）
+smoothedForward = smoothedForward + (rawForward - smoothedForward) * 0.15
+
+// 飛蚊症用スムージング（α=0.04：硝子体の慣性感）
+floatersForward = floatersForward + (rawForward - floatersForward) * 0.04
+
+// Entity 配置：ヘッド位置 + forward * 1.5m
+let scotomaPos = headPos + smoothedForward * overlayDistance  // overlayDistance = 1.5
+scotoma.position = scotomaPos
+scotoma.look(at: headPos, from: scotomaPos, relativeTo: nil)  // ビルボード的動作
 ```
 
-**飛蚊症（Floaters）**
-- 中心暗点と同じくアイトラッキング連動
-- 視線位置から少しオフセットした位置にランダムな半透明の影を描画
-- 影の動きは視線に追従するが 0.5〜1秒の遅延を入れる
-
-### 優先度中
-
-**App Store 申請**
-- `docs/app-store-metadata.md` にメタデータがまとまっている
-- スクリーンショットの撮影が必要（visionOS 向け）
-- 実機での最終動作確認
-- チェックリストは `docs/app-store-metadata.md` の末尾を参照
+飛蚊症は `FloaterOffsetComponent`（horizontal/vertical オフセット）を各球体 Entity に添付し、
+ヘッドの `right`/`up` ベクトルで視野内に分散配置する。
 
 ---
 
