@@ -209,6 +209,8 @@ Implemented conditions: glaucoma (visual field loss), color vision deficiency (3
 
 The app requires a spatial photo from the user's photo library to function. A standard HEIC photo is also accepted for testing purposes.
 
+Note: After selecting a photo, please wait a few seconds for the spatial photo to load before the immersive experience begins. Large spatial photos may take a moment to process.
+
 There are no in-app purchases, accounts, or network requests.
 
 The app displays a disclaimer on launch and within each condition description stating that the experience is approximate and should not be used for medical diagnosis.
