@@ -23,7 +23,6 @@ import RealityKit
 import RealityKitContent
 import CoreImage
 import CoreImage.CIFilterBuiltins
-import Metal
 import ARKit
 
 struct ImmersiveView: View {
@@ -48,10 +47,6 @@ struct ImmersiveView: View {
     // フローティングパネルの最小化フラグ
     // true = ヘッダーのみ表示
     @State private var isPanelMinimized = false
-
-    // 写真の CGImage を保存（MTLTexture → CGImage の変換は一度だけ行う）
-    // nil = まだ抽出していない
-    @State private var sourceCGImage: CGImage? = nil
 
     // Core Image のコンテキスト（再生成を避けるために保持）
     @State private var ciContext = CIContext()
@@ -192,9 +187,8 @@ struct ImmersiveView: View {
         .task {
             await startARKitTracking()
         }
-        // 写真が変わったとき：CGImageキャッシュをクリアして再抽出
+        // 写真が変わったとき：マテリアルを再適用する
         .onChange(of: appModel.textureVersion) { _, _ in
-            sourceCGImage = nil  // キャッシュをクリア
             guard let dome = domeEntity else { return }
             filterTask?.cancel()
             filterTask = Task { @MainActor in
@@ -300,10 +294,16 @@ struct ImmersiveView: View {
     // テクスチャと症状設定をドームに適用する
     //
     // 【処理の流れ】
-    // 1. sourceCGImage がなければ TextureResource から抽出して保存
-    // 2. 症状が「なし」なら元テクスチャをそのまま使う
-    // 3. 症状あり → CGImage にフィルターをかけて TextureResource を生成
+    // 1. 症状が「なし」なら元テクスチャをそのまま使う
+    // 2. 症状あり → appModel.sourceStereoImages の CGImage にフィルターをかける
+    // 3. フィルター済み CGImage から TextureResource を生成
     // 4. UnlitMaterial に設定してドームに適用
+    //
+    // 【なぜ TextureResource → CGImage 変換を廃止したか】
+    // TextureResource.copy(to: MTLTexture) → getBytes() のパスは
+    // visionOS 実機で正常に動作しないケースがあるため、
+    // ContentView で StereoImagePair を生成した時点の CGImage を
+    // AppModel 経由で直接受け取る方式に変更した。
     // ------------------------------------------------------------------
     @MainActor
     private func applyMaterial(
@@ -316,20 +316,6 @@ struct ImmersiveView: View {
             return
         }
 
-        // CGImage がキャッシュされていなければ抽出する
-        // この処理は一度だけ（写真切り替え時にクリアされるまで）
-        if sourceCGImage == nil {
-            sourceCGImage = await extractCGImage(from: textures.left)
-            if sourceCGImage == nil {
-                print("⚠️ CGImage 抽出失敗、元テクスチャを使用")
-                applyUnlit(texture: textures.left, to: entity)
-                return
-            }
-            print("✅ CGImage キャッシュ完了: \(sourceCGImage!.width)x\(sourceCGImage!.height)")
-        }
-
-        guard let cgImage = sourceCGImage else { return }
-
         // タスクキャンセルチェック（スライダー連打でキャンセルされた場合は何もしない）
         if Task.isCancelled { return }
 
@@ -337,6 +323,15 @@ struct ImmersiveView: View {
         if setting.type == .none {
             applyUnlit(texture: textures.left, to: entity)
             print("✅ マテリアル更新: 症状なし")
+            return
+        }
+
+        // フィルターをかけるための元 CGImage を取得
+        // AppModel に保存された元画像を直接使う（GPU → CPU 変換コストなし）
+        guard let cgImage = appModel.sourceStereoImages?.left else {
+            // CGImage が未設定の場合は元テクスチャをそのまま使う
+            print("⚠️ sourceStereoImages 未設定、元テクスチャを使用")
+            applyUnlit(texture: textures.left, to: entity)
             return
         }
 
@@ -414,82 +409,6 @@ struct ImmersiveView: View {
         material.color = .init(texture: .init(texture))
         material.faceCulling = .none
         entity.model?.materials = [material]
-    }
-
-    // ------------------------------------------------------------------
-    // TextureResource から CGImage を抽出する
-    //
-    // 処理コスト：高（GPU → CPU メモリコピー）
-    // そのため一度だけ実行して @State に保存する。
-    // ------------------------------------------------------------------
-    @MainActor
-    private func extractCGImage(from texture: TextureResource) async -> CGImage? {
-        guard let device = MTLCreateSystemDefaultDevice() else {
-            print("⚠️ Metal デバイス取得失敗")
-            return nil
-        }
-
-        let width  = texture.width
-        let height = texture.height
-
-        // テクスチャのピクセルデータを受け取るための MTLTexture を作成
-        //
-        // 【重要】rgba8Unorm_srgb を使う理由：
-        // 空間写真は sRGB 画像。TextureResource.copy(to:) でコピーするとき、
-        // rgba8Unorm（リニア）にすると GPU がガンマを除去したリニア値を書き込む。
-        // そのデータを CGContext（DeviceRGB = sRGB）に渡すと「暗い画像」になる。
-        // rgba8Unorm_srgb にすることで sRGB エンコード済みの値がそのまま保持される。
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm_srgb,
-            width: width,
-            height: height,
-            mipmapped: false
-        )
-        // shaderWrite: copy(to:) が書き込めるように必要
-        // shared: CPU から読み取れるように必要
-        descriptor.usage       = [.shaderRead, .shaderWrite]
-        descriptor.storageMode = .shared
-
-        guard let mtlTexture = device.makeTexture(descriptor: descriptor) else {
-            print("⚠️ MTLTexture 作成失敗")
-            return nil
-        }
-
-        // TextureResource → MTLTexture へコピー
-        do {
-            try await texture.copy(to: mtlTexture)
-        } catch {
-            print("⚠️ texture.copy 失敗: \(error)")
-            return nil
-        }
-
-        // MTLTexture → ピクセルバッファ → CGImage
-        let bytesPerRow = width * 4
-        var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
-        mtlTexture.getBytes(
-            &pixels,
-            bytesPerRow: bytesPerRow,
-            from: MTLRegionMake2D(0, 0, width, height),
-            mipmapLevel: 0
-        )
-
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        guard let context = CGContext(
-            data: &pixels,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
-            space: colorSpace,
-            // MTLTexture からコピーしたデータは非プリマルチプライ（straight alpha）
-            // premultipliedLast にするとアルファが1.0未満のとき RGB が暗くなる
-            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
-        ) else {
-            print("⚠️ CGContext 作成失敗")
-            return nil
-        }
-
-        return context.makeImage()
     }
 
     // ------------------------------------------------------------------

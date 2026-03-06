@@ -266,6 +266,11 @@ struct ContentView: View {
             )
 
             // AppModel に保存（ImmersiveView が監視している）
+            // CGImage も保存しておく（ImmersiveView のフィルター処理で直接使う）
+            appModel.sourceStereoImages = StereoCGImages(
+                left: stereoPair.left,
+                right: stereoPair.right
+            )
             appModel.selectedStereoTextures = StereoTextures(
                 left: leftTexture,
                 right: rightTexture

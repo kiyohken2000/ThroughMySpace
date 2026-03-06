@@ -27,6 +27,13 @@ struct StereoTextures {
     let right: TextureResource
 }
 
+// 左右 CGImage のペア（フィルター処理用に保持）
+// TextureResource → CGImage の変換コストを避けるため元画像を直接保存する
+struct StereoCGImages {
+    let left: CGImage
+    let right: CGImage
+}
+
 /// アプリ全体の状態を管理
 @MainActor
 @Observable
@@ -51,6 +58,10 @@ class AppModel {
     // ImmersiveView はこの値を監視して球体を更新する
     // -------------------------------------------------------
     var selectedStereoTextures: StereoTextures? = nil
+
+    // フィルター処理用の元 CGImage ペア（TextureResource から変換せずに保持）
+    // ImmersiveView の extractCGImage を廃止してこちらを直接使う
+    var sourceStereoImages: StereoCGImages? = nil
 
     // テクスチャが更新されるたびにインクリメントするカウンター
     // onChange(of: textureVersion) で確実にトリガーをかけるために使う
