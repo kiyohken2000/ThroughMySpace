@@ -49,8 +49,9 @@ struct SpatialPhotoPicker: UIViewControllerRepresentable {
         // PHPickerConfiguration(photoLibrary: .shared()) だとフルアクセスが必要になる
         var config = PHPickerConfiguration()
 
-        // .continuous = タップした瞬間に選択を通知（確定ボタン不要）
-        config.selection = .continuous
+        // .continuous はタップ即通知だが、visionOS の spatialMedia フィルタとの組み合わせで
+        // データ未準備のまま didFinishPicking が呼ばれクラッシュする事例があるため使わない。
+        // デフォルト（.default）を使い、確定ボタンで安全に確定させる。
         config.selectionLimit = 1
 
         #if targetEnvironment(simulator)
@@ -70,6 +71,8 @@ struct SpatialPhotoPicker: UIViewControllerRepresentable {
     class Coordinator: NSObject, PHPickerViewControllerDelegate {
         var onSelect: (Data) -> Void
         @Binding var isPresented: Bool
+        // 二重呼び出し防止フラグ（didFinishPicking が複数回来ても1回だけ処理する）
+        private var hasSelected = false
 
         init(onSelect: @escaping (Data) -> Void, isPresented: Binding<Bool>) {
             self.onSelect = onSelect
@@ -77,13 +80,17 @@ struct SpatialPhotoPicker: UIViewControllerRepresentable {
         }
 
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            // すでに処理済みなら何もしない
+            guard !hasSelected else { return }
+
             guard let result = results.first else {
                 isPresented = false
                 return
             }
 
+            hasSelected = true
+
             // NSItemProvider からデータを直接取得（フォトライブラリ権限不要）
-            // kUTTypeImage ではなく "public.heic" や "public.image" を指定する
             let provider = result.itemProvider
 
             // 空間写真は HEIC なので "public.heic" を優先、
@@ -95,10 +102,13 @@ struct SpatialPhotoPicker: UIViewControllerRepresentable {
                 typeIdentifier = "public.image"
             }
 
+            // ピッカーを先に閉じてから非同期でデータ取得する
+            // データ取得完了を待ってから閉じると UI がフリーズして見えるため
+            isPresented = false
+
             provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { [weak self] data, error in
                 DispatchQueue.main.async {
                     guard let self else { return }
-                    self.isPresented = false
                     if let data {
                         self.onSelect(data)
                     } else {
