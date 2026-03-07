@@ -82,23 +82,34 @@ ShaderGraph の `ND_realitykit_geometry_switch_cameraindex_color3` ノード（C
 
 ## シェーダーについての方針
 
-**基本方針：Core Image（CPU 側）でフィルターを適用し、処理済みテクスチャをマテリアルに渡す。**
+**2つの方式を使い分けている。**
 
-visionOS では Metal の CustomMaterial が使用不可なため、シェーダーは Core Image で実装する。
+### Core Image フィルター方式（静的テクスチャ加工）
 
-- 視野狭窄：`CIVignetteEffect`
+CPU 側でフィルターを適用し、処理済みテクスチャをマテリアルに渡す。写真選択・強度変更時のみ再生成。
+
 - 色覚異常：`CIColorMatrix`（Brettel 1997 行列変換、3タイプ）
 - 白内障：`CIGaussianBlur` + Bloom（輝度抽出 → ブラー → 加算合成）+ 黄変
-- 網膜色素変性症：`CIRadialGradient` + `CIBlendWithMask`
 - 老眼：`CIGaussianBlur` + コントラスト調整
 - 乱視：`CIMotionBlur`（30度方向）+ 輝度マスク
 
-中心暗点・飛蚊症は**ヘッドトラッキング連動（実装済み）**：
-- CI フィルター方式（毎フレームのテクスチャ再生成）ではなく **RealityKit Entity オーバーレイ方式**で実装
+### RealityKit Entity オーバーレイ方式（ヘッドトラッキング連動）
+
+ドームのテクスチャは変更せず、ドーナツ状の ModelEntity をヘッド前方に毎フレーム配置する方式。
+CI フィルターでの毎フレームテクスチャ再生成（2560×2560 を 60fps）は処理不可のため採用。
+
+以下4症状が Entity オーバーレイ方式：
+- **視野狭窄**：中心が透明・周辺が暗いドーナツ状 Entity（グラデーション幅広め、α=0.88）
+- **網膜色素変性症**：より急峻な境界のドーナツ状 Entity（「壁」感、α=0.96）
+- **中心暗点**：中心が暗いグラデーション平面 Entity
+- **飛蚊症**：7個の半透明球体 Entity
+
+共通実装：
 - ARKit `WorldTrackingProvider.queryDeviceAnchor` でヘッドの向きを 60fps で取得
-- 暗点/飛蚊 Entity をヘッド前方 `overlayDistance=1.5m` に配置し毎フレーム `position` を更新
-- **スムージング**：中心暗点は α=0.15、飛蚊症は α=0.04（硝子体の慣性感）で lerp
+- Entity をヘッド前方 `overlayDistance=1.5m` に配置し毎フレーム `position` を更新
+- **スムージング**：視野狭窄・網膜色素変性症・中心暗点は α=0.15、飛蚊症は α=0.04（硝子体の慣性感）で lerp
 - **飛蚊症オフセット**：`FloaterOffsetComponent` で各球体の水平・垂直オフセットを保持し `right/up` ベクトルで分散配置
+- **ドーナツ状テクスチャ生成**：`CGContext` で全体を黒で塗り、`destinationOut` ブレンドモードで中心を透明にくり抜く
 
 ---
 
@@ -154,19 +165,20 @@ ThroughMySpace/
 - [x] フェーズ1：日英ローカライゼーション
 - [x] フェーズ2：中心暗点（ヘッドトラッキング連動・Entity オーバーレイ方式）
 - [x] フェーズ2：飛蚊症（ヘッドトラッキング連動・Entity オーバーレイ方式）
-- [x] フェーズ2：App Store 申請（審査提出済み・審査待ち）
+- [x] フェーズ2：視野狭窄・網膜色素変性症を Entity オーバーレイ方式に変更
+- [x] フェーズ2：App Store 審査通過・リリース済み
 
 ### 実装済み症状一覧
 
 | 症状 | 状態 | 手法 |
 |---|---|---|
-| 視野狭窄（緑内障） | ✅ 実装済み | CIVignetteEffect |
+| 視野狭窄（緑内障） | ✅ 実装済み | ヘッドトラッキング + Entity オーバーレイ（α=0.15） |
 | 色覚異常 | ✅ 実装済み | Brettel 1997 行列変換（3タイプ） |
 | 白内障 | ✅ 実装済み | CIGaussianBlur + Bloom + 黄変 |
-| 網膜色素変性症 | ✅ 実装済み | CIRadialGradient + CIBlendWithMask |
+| 網膜色素変性症 | ✅ 実装済み | ヘッドトラッキング + Entity オーバーレイ（α=0.15） |
 | 老眼 | ✅ 実装済み | CIGaussianBlur + コントラスト調整 |
 | 乱視 | ✅ 実装済み | CIMotionBlur（30度）+ 輝度マスク |
-| 中心暗点 | ✅ 実装済み | ヘッドトラッキング + Entity オーバーレイ（スムージング α=0.15） |
+| 中心暗点 | ✅ 実装済み | ヘッドトラッキング + Entity オーバーレイ（α=0.15） |
 | 飛蚊症 | ✅ 実装済み | ヘッドトラッキング + Entity オーバーレイ（遅延追従 α=0.04） |
 
 ---

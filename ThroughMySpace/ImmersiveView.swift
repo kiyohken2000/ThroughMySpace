@@ -80,6 +80,12 @@ struct ImmersiveView: View {
     /// 中心暗点オーバーレイ（単一の黒円）
     @State private var scotomaEntity: ModelEntity? = nil
 
+    /// 視野狭窄オーバーレイ（周辺を暗くするドーナツ状リング）
+    @State private var visualFieldEntity: ModelEntity? = nil
+
+    /// 網膜色素変性症オーバーレイ（より暗く急峻な境界のドーナツ状リング）
+    @State private var retinitisEntity: ModelEntity? = nil
+
     /// 飛蚊症オーバーレイ（ゴマ状のみ）
     @State private var floaterEntitiesByType: [[ModelEntity]] = []
 
@@ -117,6 +123,18 @@ struct ImmersiveView: View {
             content.add(scotoma)
             scotomaEntity = scotoma
 
+            // MARK: 視野狭窄オーバーレイ Entity（初期は非表示）
+            let vf = makeVisualFieldEntity()
+            vf.isEnabled = false
+            content.add(vf)
+            visualFieldEntity = vf
+
+            // MARK: 網膜色素変性症オーバーレイ Entity（初期は非表示）
+            let rp = makeRetinitisEntity()
+            rp.isEnabled = false
+            content.add(rp)
+            retinitisEntity = rp
+
             // MARK: 飛蚊症オーバーレイ Entity（ゴマ状のみ、初期は非表示）
             let granularEntities = makeFloaterEntities()
             for e in granularEntities {
@@ -129,7 +147,7 @@ struct ImmersiveView: View {
             // MARK: フローティングパネルを 3D 空間に配置
             // 少し上（y=0.6）・正面方向（z=-1.2）に浮かせる
             if let panelEntity = attachments.entity(for: panelAttachmentID) {
-                panelEntity.position = SIMD3<Float>(0, 0.6, -1.2)
+                panelEntity.position = SIMD3<Float>(0, 0.6, -0.8)
                 content.add(panelEntity)
 
                 // MARK: 症状説明（InfoView）をパネルの子として配置
@@ -202,10 +220,13 @@ struct ImmersiveView: View {
         // 症状設定が変わったとき：保存済み CGImage にフィルターをかけ直す
         .onChange(of: appModel.conditionSetting) { oldSetting, newSetting in
             // ──────────────────────────────────────────────
-            // Entity オーバーレイ（中心暗点・飛蚊症）の表示切り替え
+            // Entity オーバーレイの表示切り替え
+            // （中心暗点・飛蚊症・視野狭窄・網膜色素変性症）
             // ──────────────────────────────────────────────
-            let isScotoma   = (newSetting.type == .scotoma)
-            let isFloaters  = (newSetting.type == .floaters)
+            let isScotoma      = (newSetting.type == .scotoma)
+            let isFloaters     = (newSetting.type == .floaters)
+            let isVisualField  = (newSetting.type == .visualField)
+            let isRetinitis    = (newSetting.type == .retinitispigmentosa)
 
             // 中心暗点：表示/非表示 + intensity に応じたスケール更新
             // ベースサイズ 0.6m（overlayDistance=1.5m 基準）
@@ -216,6 +237,28 @@ struct ImmersiveView: View {
                 if isScotoma {
                     let scotomaScale = mix(0.6, 2.2, t: newSetting.intensity.value)
                     scotoma.scale = SIMD3<Float>(scotomaScale, scotomaScale, scotomaScale)
+                }
+            }
+
+            // 視野狭窄：表示/非表示 + intensity に応じたスケール更新
+            // intensity=0（軽度）: スケール 0.8（周辺がわずかに暗い）
+            // intensity=1（重度）: スケール 2.8（ほぼ全視野が暗化）
+            if let vf = visualFieldEntity {
+                vf.isEnabled = isVisualField
+                if isVisualField {
+                    let vfScale = mix(0.8, 2.8, t: newSetting.intensity.value)
+                    vf.scale = SIMD3<Float>(vfScale, vfScale, vfScale)
+                }
+            }
+
+            // 網膜色素変性症：表示/非表示 + intensity に応じたスケール更新
+            // intensity=0（軽度）: スケール 1.0（やや広めの視野残存）
+            // intensity=1（重度）: スケール 3.2（重度のトンネル視野）
+            if let rp = retinitisEntity {
+                rp.isEnabled = isRetinitis
+                if isRetinitis {
+                    let rpScale = mix(1.0, 3.2, t: newSetting.intensity.value)
+                    rp.scale = SIMD3<Float>(rpScale, rpScale, rpScale)
                 }
             }
 
@@ -354,8 +397,9 @@ struct ImmersiveView: View {
             filteredRight = rightCI
 
         case .visualField:
-            filteredLeft  = applyVignetteFilter(to: leftCI,  intensity: setting.intensity.value)
-            filteredRight = applyVignetteFilter(to: rightCI, intensity: setting.intensity.value)
+            // Entity オーバーレイ方式で実装するため、ドームには何もしない
+            filteredLeft  = leftCI
+            filteredRight = rightCI
 
         case .colorBlind:
             filteredLeft  = applyColorBlindFilter(to: leftCI,  type: setting.colorBlindType, intensity: setting.intensity.value)
@@ -366,8 +410,9 @@ struct ImmersiveView: View {
             filteredRight = applyCataractFilter(to: rightCI, intensity: setting.intensity.value)
 
         case .retinitispigmentosa:
-            filteredLeft  = applyRetinitisFilter(to: leftCI,  intensity: setting.intensity.value)
-            filteredRight = applyRetinitisFilter(to: rightCI, intensity: setting.intensity.value)
+            // Entity オーバーレイ方式で実装するため、ドームには何もしない
+            filteredLeft  = leftCI
+            filteredRight = rightCI
 
         case .presbyopia:
             filteredLeft  = applyPresbyopiaFilter(to: leftCI,  intensity: setting.intensity.value)
@@ -972,6 +1017,23 @@ struct ImmersiveView: View {
                     scotoma.look(at: headPos, from: scotomaPos, relativeTo: nil)
                 }
 
+                // 視野狭窄 Entity の位置更新（中心暗点と同じスムージング α=0.15）
+                // ドーナツ状リングが視線中心に追従することで
+                // 「周辺は暗いが視線の先は明るい」緑内障の特徴を正確に表現
+                if let vf = visualFieldEntity, vf.isEnabled {
+                    let vfPos = headPos + smoothedForward * overlayDistance
+                    vf.position = vfPos
+                    vf.look(at: headPos, from: vfPos, relativeTo: nil)
+                }
+
+                // 網膜色素変性症 Entity の位置更新（同 α=0.15）
+                // 視野狭窄より暗く急峻な境界のリングで「壁」感を表現
+                if let rp = retinitisEntity, rp.isEnabled {
+                    let rpPos = headPos + smoothedForward * overlayDistance
+                    rp.position = rpPos
+                    rp.look(at: headPos, from: rpPos, relativeTo: nil)
+                }
+
                 // 飛蚊症 Entity の位置更新（遅延追従）
                 // ヘッドの right/up を使って視野内に分散配置する
                 if !floaterEntities.isEmpty && floaterEntities[0].isEnabled {
@@ -1076,6 +1138,171 @@ struct ImmersiveView: View {
         let entity = ModelEntity(mesh: mesh, materials: [material])
         entity.name = "ScotomaOverlay"
         entity.scale = SIMD3<Float>(1.0, 1.0, 1.0)
+        return entity
+    }
+
+    // ------------------------------------------------------------------
+    // 視野狭窄オーバーレイ Entity を生成する
+    //
+    // 【緑内障などの視野狭窄の特徴】
+    // ・周辺視野が失われ、中心部だけが見える
+    // ・境界はなだらかなグラデーション
+    //
+    // 【実装方針】
+    // 中心が透明（穴）で周辺が暗い「ドーナツ状」のテクスチャを持つ平面 Entity。
+    // 中心の透明部分がそのまま「見える視野」に対応する。
+    //
+    // テクスチャ：中心（半径 35%）が完全透明、そこから外側に向けて黒くなるグラデーション。
+    // 中心暗点と逆のグラデーション方向になる。
+    // ------------------------------------------------------------------
+    @MainActor
+    private func makeVisualFieldEntity() -> ModelEntity {
+        let size = 512
+        guard let ctx = CGContext(
+            data: nil,
+            width: size, height: size,
+            bitsPerComponent: 8,
+            bytesPerRow: size * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return ModelEntity() }
+
+        // 全体を半透明の黒で塗りつぶす（周辺の暗い部分）
+        ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0.88))
+        ctx.fill(CGRect(x: 0, y: 0, width: size, height: size))
+
+        // 中心に向かって透明になる放射状グラデーションを重ねる
+        // これにより「中心が透明（視野あり）・周辺が黒（視野なし）」のドーナツ形状になる
+        let center = CGPoint(x: size / 2, y: size / 2)
+        let radius = CGFloat(size) / 2.0
+        let colors: [CGColor] = [
+            CGColor(red: 0, green: 0, blue: 0, alpha: 1.0),  // 完全な黒（完全に上書き）
+            CGColor(red: 0, green: 0, blue: 0, alpha: 1.0),  // 境界付近まで黒を維持
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.5),  // グラデーション開始
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.0),  // 中心：完全透明（視野あり）
+        ]
+        // 外側（1.0）から内側（0.0）に向かうグラデーション
+        // locations は内側基準（0=中心, 1=外縁）
+        let locations: [CGFloat] = [0.0, 0.30, 0.60, 1.0]
+
+        // destination-out でくり抜く（透明の穴を開ける）
+        ctx.setBlendMode(.destinationOut)
+        if let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: colors as CFArray,
+            locations: locations
+        ) {
+            ctx.drawRadialGradient(
+                gradient,
+                startCenter: center, startRadius: 0,
+                endCenter: center, endRadius: radius,
+                options: []
+            )
+        }
+
+        guard let cgImage = ctx.makeImage() else { return ModelEntity() }
+
+        // overlayDistance=1.5m に合わせた大きめサイズ（3.0m × 3.0m ベース）
+        // 視野全体を覆えるよう中心暗点より大きくする
+        // scale でサイズを調整するため、ベースは大きめにしておく
+        let mesh = MeshResource.generatePlane(width: 3.0, height: 3.0)
+        var material = UnlitMaterial()
+        material.faceCulling = .none
+
+        do {
+            let texture = try TextureResource(
+                image: cgImage,
+                withName: nil,
+                options: .init(semantic: .color)
+            )
+            material.color = .init(texture: .init(texture))
+            material.blending = .transparent(opacity: .init(floatLiteral: 1.0))
+        } catch {
+            print("⚠️ 視野狭窄テクスチャ生成失敗: \(error)")
+        }
+
+        let entity = ModelEntity(mesh: mesh, materials: [material])
+        entity.name = "VisualFieldOverlay"
+        return entity
+    }
+
+    // ------------------------------------------------------------------
+    // 網膜色素変性症オーバーレイ Entity を生成する
+    //
+    // 【視野狭窄との違い】
+    // ・より強い暗化（周辺が真っ黒）
+    // ・より急峻な境界（「壁」的な見え方）
+    // ・中心の透明領域がより小さい（重度のトンネル視野感）
+    //
+    // 【実装方針】
+    // 視野狭窄と同じドーナツ構造だが、
+    // グラデーション幅を狭くして境界を急峻にする。
+    // ------------------------------------------------------------------
+    @MainActor
+    private func makeRetinitisEntity() -> ModelEntity {
+        let size = 512
+        guard let ctx = CGContext(
+            data: nil,
+            width: size, height: size,
+            bitsPerComponent: 8,
+            bytesPerRow: size * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return ModelEntity() }
+
+        // 視野狭窄より不透明度を高くする（より暗い周辺）
+        ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0.96))
+        ctx.fill(CGRect(x: 0, y: 0, width: size, height: size))
+
+        let center = CGPoint(x: size / 2, y: size / 2)
+        let radius = CGFloat(size) / 2.0
+
+        // 視野狭窄よりグラデーション幅を狭く（0.15 → 急峻な境界）
+        // これにより緑内障の「ぼんやりした境界」ではなく
+        // 網膜色素変性症の「壁のような境界」を表現する
+        let colors: [CGColor] = [
+            CGColor(red: 0, green: 0, blue: 0, alpha: 1.0),  // 外周：完全な黒
+            CGColor(red: 0, green: 0, blue: 0, alpha: 1.0),  // 黒を広く維持
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.3),  // 急なグラデーション開始
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.0),  // 中心：完全透明
+        ]
+        // 視野狭窄（0.60）より狭いグラデーション幅（0.72）で急峻な境界を作る
+        let locations: [CGFloat] = [0.0, 0.40, 0.72, 1.0]
+
+        ctx.setBlendMode(.destinationOut)
+        if let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: colors as CFArray,
+            locations: locations
+        ) {
+            ctx.drawRadialGradient(
+                gradient,
+                startCenter: center, startRadius: 0,
+                endCenter: center, endRadius: radius,
+                options: []
+            )
+        }
+
+        guard let cgImage = ctx.makeImage() else { return ModelEntity() }
+
+        let mesh = MeshResource.generatePlane(width: 3.0, height: 3.0)
+        var material = UnlitMaterial()
+        material.faceCulling = .none
+
+        do {
+            let texture = try TextureResource(
+                image: cgImage,
+                withName: nil,
+                options: .init(semantic: .color)
+            )
+            material.color = .init(texture: .init(texture))
+            material.blending = .transparent(opacity: .init(floatLiteral: 1.0))
+        } catch {
+            print("⚠️ 網膜色素変性症テクスチャ生成失敗: \(error)")
+        }
+
+        let entity = ModelEntity(mesh: mesh, materials: [material])
+        entity.name = "RetinitisOverlay"
         return entity
     }
 

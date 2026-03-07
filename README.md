@@ -4,6 +4,8 @@
 
 自分の空間写真を使って視覚症状を体験する visionOS アプリ。
 
+**App Store**: https://apps.apple.com/jp/app/id6760091243
+
 ---
 
 ## 概要
@@ -30,14 +32,14 @@
 
 | 症状 | 手法 | 状態 |
 |---|---|---|
-| 視野狭窄（緑内障） | CIVignetteEffect | ✅ 実装済み |
-| 色覚異常（3タイプ） | Brettel 1997 行列変換 | ✅ 実装済み |
+| 視野狭窄（緑内障） | ヘッドトラッキング + Entity オーバーレイ | ✅ 実装済み |
+| 色覚異常（3タイプ） | Brettel 1997 行列変換（CIColorMatrix） | ✅ 実装済み |
 | 白内障 | CIGaussianBlur + Bloom + 黄変 | ✅ 実装済み |
-| 網膜色素変性症 | CIRadialGradient + CIBlendWithMask | ✅ 実装済み |
+| 網膜色素変性症 | ヘッドトラッキング + Entity オーバーレイ | ✅ 実装済み |
 | 老眼 | CIGaussianBlur + コントラスト調整 | ✅ 実装済み |
 | 乱視 | CIMotionBlur（30度）+ 輝度マスク | ✅ 実装済み |
-| 中心暗点 | アイトラッキング連動 | 🔜 実装予定 |
-| 飛蚊症 | アイトラッキング連動 | 🔜 実装予定 |
+| 中心暗点 | ヘッドトラッキング + Entity オーバーレイ（α=0.15） | ✅ 実装済み |
+| 飛蚊症 | ヘッドトラッキング + Entity オーバーレイ（α=0.04） | ✅ 実装済み |
 
 ---
 
@@ -55,8 +57,19 @@
 
 - **SwiftUI** — UI
 - **RealityKit + ShaderGraph** — ドームメッシュ・左右テクスチャ切り替え（CameraIndexSwitch）
-- **Core Image** — 視覚フィルター（症状ごとの画像処理）
+- **Core Image** — 視覚フィルター（色覚異常・白内障・老眼・乱視）
+- **ARKit WorldTrackingProvider** — ヘッドトラッキング（視野狭窄・網膜色素変性症・中心暗点・飛蚊症）
 - **PhotosUI + PHAssetResourceManager** — 空間写真の完全HEICデータ取得
+
+### 症状実装方式
+
+**Core Image フィルター方式**（静的テクスチャ加工）
+- 色覚異常、白内障、老眼、乱視
+
+**RealityKit Entity オーバーレイ方式**（ヘッドトラッキング連動）
+- 視野狭窄、網膜色素変性症、中心暗点、飛蚊症
+- ARKit `WorldTrackingProvider.queryDeviceAnchor` でヘッド向きを 60fps 取得
+- ドーナツ状テクスチャの ModelEntity をヘッド前方 1.5m に毎フレーム配置
 
 ### フィルターパイプライン
 

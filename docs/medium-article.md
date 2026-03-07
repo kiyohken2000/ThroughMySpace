@@ -30,10 +30,10 @@ The app simulates 8 visual conditions:
 
 | Condition | Implementation |
 |---|---|
-| Visual Field Loss (Glaucoma) | Core Image: CIVignetteEffect |
+| Visual Field Loss (Glaucoma) | ARKit WorldTracking + RealityKit Entity overlay |
 | Color Vision Deficiency (3 types) | Core Image: Brettel 1997 matrix transform |
 | Cataracts | Core Image: CIGaussianBlur + Bloom effect + yellow tint |
-| Retinitis Pigmentosa | Core Image: CIRadialGradient + CIBlendWithMask |
+| Retinitis Pigmentosa | ARKit WorldTracking + RealityKit Entity overlay |
 | Presbyopia | Core Image: CIGaussianBlur + contrast reduction |
 | Astigmatism | Core Image: CIMotionBlur (30°) + luminance mask |
 | Central Scotoma | ARKit WorldTracking + RealityKit Entity overlay |
@@ -212,6 +212,38 @@ For floaters, I used `α = 0.04` — a much slower follow speed. This creates th
 
 ![Floaters experience](images/6.飛蚊症.png)
 
+**Extending Entity overlay to visual field loss and retinitis pigmentosa**
+
+I later applied the same approach to glaucoma (visual field loss) and retinitis pigmentosa. Both conditions darken the *periphery* of vision — and that effect becomes dramatically more convincing when it actually follows your head movement rather than being baked into a static texture.
+
+For these two, I generate a donut-shaped texture using `CGContext`: fill the entire image black, then punch out the center using `destinationOut` blend mode with a radial gradient.
+
+```swift
+// Fill everything black (alpha 0.88)
+ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0.88))
+ctx.fill(CGRect(origin: .zero, size: size))
+
+// Punch out the center with destinationOut
+ctx.setBlendMode(.destinationOut)
+let gradient = CGGradient(...)  // transparent center → opaque edges
+ctx.drawRadialGradient(gradient, ...)
+```
+
+The difference between the two conditions is just the gradient steepness:
+- **Glaucoma**: `locations = [0.0, 0.30, 0.60, 1.0]` — gradual fade
+- **Retinitis Pigmentosa**: `locations = [0.0, 0.40, 0.72, 1.0]` — sharp "wall" boundary
+
+**Why the other 4 conditions don't benefit from head tracking**
+
+| Condition | Reason head tracking doesn't help |
+|---|---|
+| Color Vision Deficiency | Color shifts are uniform across the entire visual field — there's no "center" to track |
+| Cataracts | Light scattering affects the whole lens equally — the direction you look doesn't change the haze |
+| Presbyopia | This is a near-focus problem, unrelated to direction of gaze |
+| Astigmatism | Corneal/lens distortion is uniform — same blur in every direction |
+
+The guiding question: *does this condition change depending on where you look?* For the 4 Entity overlay conditions, yes. For the other 4, no.
+
 ---
 
 ## Stereo Display: CameraIndexSwitch
@@ -352,5 +384,7 @@ https://github.com/kiyohken2000/ThroughMySpace
 4. **ShaderGraph materials must be loaded from `realityKitContentBundle`**, not `.main`.
 
 5. **Lerp smoothing is essential** for any head/gaze tracking. Raw sensor data at 60fps produces visible jitter. `α = 0.15` works well for scotoma; `α = 0.04` gives floaters a natural inertia.
+
+6. **Ask "does this condition change based on where you look?"** before deciding whether to use Entity overlay or Core Image. Visual field loss, retinitis pigmentosa, central scotoma, and floaters: yes. Color blindness, cataracts, presbyopia, astigmatism: no — these affect the entire visual field uniformly.
 
 If you're building on Vision Pro and hit any of these same walls, I hope this saves you some time.
