@@ -60,7 +60,6 @@ Core Image でフィルターを適用し TextureResource として渡せる。
 | カテゴリ | 教育 / ヘルスケア＆フィットネス |
 | 年齢制限 | 4+ |
 | アプリ説明 | 視覚症状を自分の空間で体験する教育・共感ツール。医療診断には使用しないこと。 |
-| ステータス | **リリース済み** https://apps.apple.com/jp/app/id6760091243 |
 
 ---
 
@@ -72,50 +71,36 @@ Core Image でフィルターを適用し TextureResource として渡せる。
 | 空間表示 | RealityKit / Full Immersion Space |
 | 左右目テクスチャ切り替え | ShaderGraph（CameraIndexSwitch ノード） |
 | 空間写真の読み込み | PHPickerViewController + PHAssetResourceManager |
-| 視覚フィルター（静的） | Core Image（CPU処理） |
-| 視覚フィルター（動的） | ARKit WorldTrackingProvider + RealityKit Entity オーバーレイ |
+| 視覚フィルター | Core Image（CPU処理） |
 | ドームメッシュ | RealityKit MeshResource（カスタム生成） |
 
 ---
 
 ## 対応する視覚症状
 
-### 全8症状（実装済み）
-
-**Core Image フィルター方式**（写真選択・強度変更時のみテクスチャ更新）:
+### 実装済み
 
 | 症状 | 手法 |
 |---|---|
+| 視野狭窄（緑内障） | CIVignetteEffect |
 | 色覚異常（3タイプ） | Brettel 1997 行列変換（CIColorMatrix） |
 | 白内障 | CIGaussianBlur + Bloom（輝度抽出→ブラー→加算）+ 黄変 |
+| 網膜色素変性症 | CIRadialGradient + CIBlendWithMask |
 | 老眼 | CIGaussianBlur + コントラスト調整 |
 | 乱視 | CIMotionBlur（30度）+ 輝度マスク |
 
-**RealityKit Entity オーバーレイ方式**（ARKit 60fps ヘッドトラッキング連動）:
+### フェーズ2実装済み
 
-| 症状 | 手法 |
-|---|---|
-| 視野狭窄（緑内障） | ドーナツ状 Entity（幅広グラデーション・α=0.88、scale で強度調整） |
-| 網膜色素変性症 | ドーナツ状 Entity（急峻な境界・α=0.96、scale で強度調整） |
-| 中心暗点（加齢黄斑変性） | 中心が暗いグラデーション平面 Entity（α=0.15 スムージング） |
-| 飛蚊症 | 7個の半透明球体 Entity（α=0.04 遅延追従、硝子体の慣性感） |
-
-Entity オーバーレイ方式共通:
+**中心暗点（加齢黄斑変性）**
 - ARKit `WorldTrackingProvider.queryDeviceAnchor` でヘッドの向きを 60fps で取得
-- Entity をヘッド前方 1.5m に配置し毎フレーム `position` を更新
-- `destinationOut` ブレンドモードでドーナツ状テクスチャを生成（中心を透明にくり抜く）
+- CI フィルター方式ではなく RealityKit Entity オーバーレイ方式を採用（毎フレームのテクスチャ再生成が不要）
+- 中心が黒不透明・外縁が透明のグラデーション平面 Entity をヘッド前方 1.5m に配置
+- スムージング α=0.15 で視線の微振動を吸収
 
-**ヘッドトラッキング化の採否判断**
-
-判断基準：「頭を動かしたときに見え方が変わる症状か」
-
-- ✅ 視野狭窄・網膜色素変性症：頭を向けた方向の周辺が暗くなる → 追従すると体験が自然
-- ✅ 中心暗点：視線の中心が欠ける → 追従必須
-- ✅ 飛蚊症：硝子体の浮遊物 → 頭の動きに対して慣性がある
-- ❌ 色覚異常：全視野に均一な色変換 → 追従させる「中心」がない
-- ❌ 白内障：水晶体の問題。光散乱は全視野に均一
-- ❌ 老眼：近距離のピントの問題。頭の向きと無関係
-- ❌ 乱視：角膜・水晶体のゆがみは全視野に均一
+**飛蚊症**
+- 同じく Entity オーバーレイ方式
+- 7個の半透明球体 Entity を `FloaterOffsetComponent`（水平・垂直オフセット）で分散配置
+- スムージング α=0.04（約0.5秒の遅延追従）で硝子体の慣性感を再現
 
 ---
 
@@ -221,12 +206,12 @@ CGImage（元画像）
 - [x] 症状説明 InfoView・体験開始免責事項 EntryNoticeView
 - [x] 日英ローカライゼーション
 
-### フェーズ2（完了）
+### フェーズ2（状況）
 
 - [x] 中心暗点（ヘッドトラッキング連動・Entity オーバーレイ方式）
 - [x] 飛蚊症（ヘッドトラッキング連動・Entity オーバーレイ方式）
-- [x] 視野狭窄・網膜色素変性症を Entity オーバーレイ方式に変更
-- [x] App Store 申請・審査通過・リリース済み
+- [ ] 症状の重ねがけモード（複数症状の同時適用）
+- [ ] App Store 申請
 
 ---
 

@@ -26,10 +26,10 @@ https://apps.apple.com/jp/app/id6760091243
 
 | 症状 | 実装手法 |
 |---|---|
-| 視野狭窄（緑内障） | ARKit WorldTracking + RealityKit Entity オーバーレイ |
+| 視野狭窄（緑内障） | Core Image: CIVignetteEffect |
 | 色覚異常（3タイプ） | Core Image: Brettel 1997 行列変換 |
 | 白内障 | Core Image: CIGaussianBlur + Bloom + 黄変 |
-| 網膜色素変性症 | ARKit WorldTracking + RealityKit Entity オーバーレイ |
+| 網膜色素変性症 | Core Image: CIRadialGradient + CIBlendWithMask |
 | 老眼 | Core Image: CIGaussianBlur + コントラスト調整 |
 | 乱視 | Core Image: CIMotionBlur（30°）+ 輝度マスク |
 | 中心暗点 | ARKit WorldTracking + RealityKit Entity オーバーレイ |
@@ -39,8 +39,8 @@ https://apps.apple.com/jp/app/id6760091243
 
 - **SwiftUI** — UI
 - **RealityKit + ShaderGraph** — ドームメッシュ・左右テクスチャ切り替え
-- **Core Image** — 視覚フィルター（4症状：色覚異常・白内障・老眼・乱視）
-- **ARKit WorldTrackingProvider** — ヘッドトラッキング（4症状：視野狭窄・網膜色素変性症・中心暗点・飛蚊症）
+- **Core Image** — 視覚フィルター（6症状）
+- **ARKit WorldTrackingProvider** — ヘッドトラッキング（2症状）
 - **PhotosUI + PHAssetResourceManager** — 空間写真の完全 HEIC 取得
 
 ---
@@ -197,7 +197,7 @@ uvs.append(SIMD2<Float>(ht, 1.0 - vt))
 
 ---
 
-### 5. ヘッドトラッキングが有効な症状とそうでない症状の見極め
+### 5. 中心暗点・飛蚊症：Core Image ではリアルタイム追従できない
 
 「視線を向けた場所に暗点が現れる」を実装しようとしたとき、最初は Core Image フィルターで実装しようとしました。
 
@@ -241,42 +241,6 @@ while !Task.isCancelled {
 ![中心暗点の体験画面](images/5.中心暗点.png)
 
 ![飛蚊症の体験画面](images/6.飛蚊症.png)
-
-#### Entity オーバーレイ方式を視野狭窄・網膜色素変性症にも拡張
-
-最初は中心暗点と飛蚊症だけに使っていましたが、後から**視野狭窄と網膜色素変性症にも同じ方式を適用**しました。
-
-理由は「体験のリアリティ」です。どちらも「頭を向けた方向の周辺が暗くなる」症状なので、空間内の固定テクスチャよりも頭の動きに連動したほうが圧倒的に自然な体験になります。
-
-視野狭窄と網膜色素変性症のドーナツ状 Entity は `CGContext` で生成しました。全体を黒で塗り、`destinationOut` ブレンドモードで中心を透明にくり抜くのがポイントです。
-
-```swift
-// 全体を黒（alpha 0.88）で塗る
-ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0.88))
-ctx.fill(CGRect(origin: .zero, size: size))
-
-// destinationOut で中心を透明にくり抜く
-ctx.setBlendMode(.destinationOut)
-let gradient = CGGradient(...)  // 中心→透明、外縁→不透明
-ctx.drawRadialGradient(gradient, ...)
-```
-
-2つの症状の違いはグラデーションの急峻さだけです：
-- **視野狭窄**：`locations = [0.0, 0.30, 0.60, 1.0]`（なだらかな境界）
-- **網膜色素変性症**：`locations = [0.0, 0.40, 0.72, 1.0]`（急峻な「壁」感）
-
-#### ヘッドトラッキング化を見送った症状
-
-一方、以下の4症状は Core Image フィルター方式のまま（ヘッドトラッキング不採用）にしました：
-
-| 症状 | 見送り理由 |
-|---|---|
-| 色覚異常 | 色の変換は画面全体に均一に適用されるものなので、追従させる「中心」がそもそも存在しない |
-| 白内障 | 光の散乱・ぼかしは全視野に均一にかかる。水晶体の問題なので向いた方向で変化しない |
-| 老眼 | ピントの合いにくさは近距離の問題であり、空間内の方向とは無関係 |
-| 乱視 | 角膜・水晶体のゆがみによるブレは全視野に均一にかかる |
-
-「頭を動かしたときに見え方が変わる」症状かどうか、が判断基準です。視野狭窄・網膜色素変性症・中心暗点・飛蚊症はそれに該当し、他の4症状は該当しません。
 
 ---
 

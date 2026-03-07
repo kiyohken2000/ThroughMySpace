@@ -49,7 +49,7 @@
 "condition.visualField.title" = "Visual Field Loss";
 "condition.colorBlind.title" = "Color Vision Deficiency";
 "condition.cataract.title" = "Cataracts";
-"condition.rp.title" = "Retinitis\nPigmentosa";
+"condition.rp.title" = "Retinitis Pigmentosa";
 "condition.presbyopia.title" = "Presbyopia";
 "condition.astigmatism.title" = "Astigmatism";
 

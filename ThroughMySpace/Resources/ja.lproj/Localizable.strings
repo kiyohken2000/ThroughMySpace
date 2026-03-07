@@ -49,7 +49,7 @@
 "condition.visualField.title" = "視野狭窄";
 "condition.colorBlind.title" = "色覚異常";
 "condition.cataract.title" = "白内障";
-"condition.rp.title" = "網膜色素\n変性症";
+"condition.rp.title" = "網膜色素変性症";
 "condition.presbyopia.title" = "老眼";
 "condition.astigmatism.title" = "乱視";
 "condition.scotoma.title" = "中心暗点";

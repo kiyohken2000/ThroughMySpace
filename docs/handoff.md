@@ -1,17 +1,17 @@
 # 次セッション引き継ぎドキュメント
 
-最終更新: 2026-03-08（App Store リリース済み）
+最終更新: 2026-03-06（App Store 審査提出済み）
 
 ---
 
 ## 現在の状態
 
-全フェーズ**完了**。アプリは実機（Apple Vision Pro）で正常に動作し、**App Store でリリース済み**。
+フェーズ1・フェーズ2（中心暗点・飛蚊症）**完了**。アプリは実機（Apple Vision Pro）で正常に動作している。
 
 - 空間写真の立体視（左右目の分離・CameraIndexSwitch による表示）が正しく動作
-- 8症状すべて実装済み（うち4症状はヘッドトラッキング連動の Entity オーバーレイ方式）
+- 8症状すべて実装済み（うち2症状はヘッドトラッキング連動の Entity オーバーレイ方式）
 - 日英ローカライゼーション対応済み
-- **App Store リリース済み**: https://apps.apple.com/jp/app/id6760091243
+- **App Store 審査提出済み・審査待ち**
 
 ---
 
@@ -83,9 +83,9 @@ uvs.append(SIMD2<Float>(ht, 1.0 - vt))  // 1.0 - vt で上下反転
 
 ### 現状
 
-**App Store リリース済み**（https://apps.apple.com/jp/app/id6760091243）
-
-現時点で追加予定の機能は特になし。必要に応じてアップデートを検討。
+**App Store 審査提出済み・審査待ち**
+- 審査が通り次第リリース
+- リジェクトされた場合は `docs/app-store-metadata.md` を参照して対応する
 
 ---
 
@@ -93,25 +93,19 @@ uvs.append(SIMD2<Float>(ht, 1.0 - vt))  // 1.0 - vt で上下反転
 
 | 症状 | 手法 |
 |---|---|
-| 視野狭窄（緑内障） | ARKit WorldTracking + Entity オーバーレイ（ドーナツ状、α=0.15 スムージング） |
+| 視野狭窄（緑内障） | CIVignetteEffect |
 | 色覚異常（3タイプ） | Brettel 1997 行列変換（CIColorMatrix） |
 | 白内障 | CIGaussianBlur + Bloom（輝度抽出→ブラー→加算）+ 黄変 |
-| 網膜色素変性症 | ARKit WorldTracking + Entity オーバーレイ（急峻な境界・α=0.15 スムージング） |
+| 網膜色素変性症 | CIRadialGradient + CIBlendWithMask |
 | 老眼 | CIGaussianBlur + コントラスト調整 |
 | 乱視 | CIMotionBlur（30度）+ 輝度マスク |
 | 中心暗点 | ARKit WorldTracking + Entity オーバーレイ（α=0.15 スムージング） |
 | 飛蚊症 | ARKit WorldTracking + Entity オーバーレイ（α=0.04 遅延追従） |
 
-### Entity オーバーレイ方式の実装アーキテクチャ
+### 中心暗点・飛蚊症の実装アーキテクチャ
 
 CI フィルター方式（毎フレームのテクスチャ再生成）ではリアルタイム追従が不可能なため、
-視野狭窄・網膜色素変性症・中心暗点・飛蚊症の4症状に **RealityKit Entity オーバーレイ方式**を採用。
-
-**ドーナツ状テクスチャ生成（視野狭窄・網膜色素変性症）:**
-- `CGContext` で全体を黒（alpha 0.88〜0.96）で塗る
-- `destinationOut` ブレンドモードで中心を放射グラデーションで透明にくり抜く
-- 視野狭窄: `locations = [0.0, 0.30, 0.60, 1.0]`（幅広なだらかグラデーション）
-- 網膜色素変性症: `locations = [0.0, 0.40, 0.72, 1.0]`（急峻な「壁」感、α=0.96）
+**RealityKit Entity オーバーレイ方式**を採用。
 
 ```swift
 // ARKit WorldTrackingProvider でヘッドの向きを 60fps で取得
@@ -121,50 +115,20 @@ let matrix = anchor.originFromAnchorTransform
 // ヘッド前方ベクトル（-Z 軸）
 let rawForward = SIMD3<Float>(-matrix.columns.2.x, -matrix.columns.2.y, -matrix.columns.2.z)
 
-// 視野狭窄・網膜色素変性症・中心暗点用スムージング（α=0.15）
+// 中心暗点用スムージング（α=0.15）
 smoothedForward = smoothedForward + (rawForward - smoothedForward) * 0.15
 
 // 飛蚊症用スムージング（α=0.04：硝子体の慣性感）
 floatersForward = floatersForward + (rawForward - floatersForward) * 0.04
 
 // Entity 配置：ヘッド位置 + forward * 1.5m
-let overlayPos = headPos + smoothedForward * overlayDistance  // overlayDistance = 1.5
-visualFieldEntity?.position = overlayPos
-visualFieldEntity?.look(at: headPos, from: overlayPos, relativeTo: nil)
-retinitisEntity?.position = overlayPos
-retinitisEntity?.look(at: headPos, from: overlayPos, relativeTo: nil)
-scotomaEntity?.position = overlayPos
-scotomaEntity?.look(at: headPos, from: overlayPos, relativeTo: nil)
+let scotomaPos = headPos + smoothedForward * overlayDistance  // overlayDistance = 1.5
+scotoma.position = scotomaPos
+scotoma.look(at: headPos, from: scotomaPos, relativeTo: nil)  // ビルボード的動作
 ```
 
 飛蚊症は `FloaterOffsetComponent`（horizontal/vertical オフセット）を各球体 Entity に添付し、
 ヘッドの `right`/`up` ベクトルで視野内に分散配置する。
-
-**視野狭窄・網膜色素変性症の scale 制御（ImmersiveView.swift の onChange）:**
-```swift
-// 視野狭窄: scale 0.8〜2.8（強度に応じて周辺の暗い領域が広がる）
-let vfScale = mix(0.8, 2.8, t: intensity)
-visualFieldEntity.scale = SIMD3<Float>(vfScale, vfScale, vfScale)
-
-// 網膜色素変性症: scale 1.0〜3.2（より強い「視野の壁」）
-let rpScale = mix(1.0, 3.2, t: intensity)
-retinitisEntity.scale = SIMD3<Float>(rpScale, rpScale, rpScale)
-```
-
-### ヘッドトラッキング化の採否判断
-
-「頭を動かしたときに見え方が変わる症状か」が判断基準。
-
-| 症状 | 採用 | 理由 |
-|---|---|---|
-| 視野狭窄 | ✅ Entity オーバーレイ | 頭を向けた方向の周辺が暗くなる → 追従すると自然 |
-| 網膜色素変性症 | ✅ Entity オーバーレイ | 同上 |
-| 中心暗点 | ✅ Entity オーバーレイ | 視線の中心が欠ける → 追従必須 |
-| 飛蚊症 | ✅ Entity オーバーレイ | 硝子体の浮遊物 → 頭の動きに対して慣性がある |
-| 色覚異常 | ❌ Core Image のまま | 色の変換は全視野に均一。追従させる「中心」がない |
-| 白内障 | ❌ Core Image のまま | 水晶体の問題。光散乱は全視野に均一 |
-| 老眼 | ❌ Core Image のまま | 近距離のピントの問題。方向と無関係 |
-| 乱視 | ❌ Core Image のまま | 角膜・水晶体のゆがみは全視野に均一 |
 
 ---
 
