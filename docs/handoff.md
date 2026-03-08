@@ -1,6 +1,6 @@
 # 次セッション引き継ぎドキュメント
 
-最終更新: 2026-03-06（App Store 審査提出済み）
+最終更新: 2026-03-08
 
 ---
 
@@ -93,39 +93,62 @@ uvs.append(SIMD2<Float>(ht, 1.0 - vt))  // 1.0 - vt で上下反転
 
 | 症状 | 手法 |
 |---|---|
-| 視野狭窄（緑内障） | CIVignetteEffect |
+| 視野狭窄（緑内障） | ARKit WorldTracking + Entity オーバーレイ（外周暗化テクスチャ・α=0.15 スムージング） |
 | 色覚異常（3タイプ） | Brettel 1997 行列変換（CIColorMatrix） |
 | 白内障 | CIGaussianBlur + Bloom（輝度抽出→ブラー→加算）+ 黄変 |
-| 網膜色素変性症 | CIRadialGradient + CIBlendWithMask |
+| 網膜色素変性症 | ARKit WorldTracking + Entity オーバーレイ（外周黒・中心透明テクスチャ・α=0.15 スムージング） |
 | 老眼 | CIGaussianBlur + コントラスト調整 |
 | 乱視 | CIMotionBlur（30度）+ 輝度マスク |
 | 中心暗点 | ARKit WorldTracking + Entity オーバーレイ（α=0.15 スムージング） |
 | 飛蚊症 | ARKit WorldTracking + Entity オーバーレイ（α=0.04 遅延追従） |
 
-### 中心暗点・飛蚊症の実装アーキテクチャ
+### Entity オーバーレイ方式（4症状共通アーキテクチャ）
 
 CI フィルター方式（毎フレームのテクスチャ再生成）ではリアルタイム追従が不可能なため、
-**RealityKit Entity オーバーレイ方式**を採用。
+視野狭窄・網膜色素変性症・中心暗点・飛蚊症の4症状すべてで **RealityKit Entity オーバーレイ方式**を採用。
+
+**基本原則：**
+- 6m×6m の平面 `ModelEntity` を生成（`overlayDistance=1.5m` で ±60度をカバーするため）
+- テクスチャで「透明な部分＝見える範囲、不透明な部分＝症状による視野制限」を表現
+- `CGContext.clear()` で初期化してから `drawRadialGradient` を描画（`fill()` では透明にならない）
+- Entity の向きは `entity.orientation = headOrientation`（`look(at:)` は平面が傾くためNG）
 
 ```swift
 // ARKit WorldTrackingProvider でヘッドの向きを 60fps で取得
 let anchor = worldTracking.queryDeviceAnchor(atTimestamp: CACurrentMediaTime())
 let matrix = anchor.originFromAnchorTransform
 
+// ヘッドの向きをクォータニオンとして抽出（向き設定に使用）
+let rotMatrix = simd_float3x3(
+    SIMD3<Float>(matrix.columns.0.x, matrix.columns.0.y, matrix.columns.0.z),
+    SIMD3<Float>(matrix.columns.1.x, matrix.columns.1.y, matrix.columns.1.z),
+    SIMD3<Float>(matrix.columns.2.x, matrix.columns.2.y, matrix.columns.2.z)
+)
+let headOrientation = simd_quatf(rotMatrix)
+
 // ヘッド前方ベクトル（-Z 軸）
 let rawForward = SIMD3<Float>(-matrix.columns.2.x, -matrix.columns.2.y, -matrix.columns.2.z)
 
-// 中心暗点用スムージング（α=0.15）
+// 中心暗点・視野狭窄・網膜色素変性症用スムージング（α=0.15）
 smoothedForward = smoothedForward + (rawForward - smoothedForward) * 0.15
 
 // 飛蚊症用スムージング（α=0.04：硝子体の慣性感）
 floatersForward = floatersForward + (rawForward - floatersForward) * 0.04
 
 // Entity 配置：ヘッド位置 + forward * 1.5m
-let scotomaPos = headPos + smoothedForward * overlayDistance  // overlayDistance = 1.5
-scotoma.position = scotomaPos
-scotoma.look(at: headPos, from: scotomaPos, relativeTo: nil)  // ビルボード的動作
+let pos = headPos + smoothedForward * overlayDistance  // overlayDistance = 1.5
+entity.position = pos
+entity.orientation = headOrientation  // look(at:) ではなく orientation を直接設定
 ```
+
+**症状別テクスチャ構造：**
+- 視野狭窄：中心透明 → 外周ほど黒アルファが上がるラジアルグラデーション（周辺視野の暗化）
+- 網膜色素変性症：中心だけ透明（小さい円）→ 外周は黒（周辺視野ほぼゼロ）
+- 中心暗点：中心が黒不透明 → 外縁が透明のグラデーション（中心部の暗点）
+
+**intensity 変化時の処理：**
+テクスチャを差し替え方式（`updateVisualFieldTexture()` / `updateRetinitisTexture()` を再呼び出し）。
+板サイズは 6m×6m 固定（スケール変更では透明穴と板が同比率で変化するため視野角が変わらない）。
 
 飛蚊症は `FloaterOffsetComponent`（horizontal/vertical オフセット）を各球体 Entity に添付し、
 ヘッドの `right`/`up` ベクトルで視野内に分散配置する。

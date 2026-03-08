@@ -80,24 +80,28 @@ ShaderGraph の `ND_realitykit_geometry_switch_cameraindex_color3` ノード（C
 
 ---
 
-## シェーダーについての方針
+## 視覚フィルターの実装方針
 
-**基本方針：Core Image（CPU 側）でフィルターを適用し、処理済みテクスチャをマテリアルに渡す。**
+### Core Image 方式（4症状）
 
-visionOS では Metal の CustomMaterial が使用不可なため、シェーダーは Core Image で実装する。
+visionOS では Metal の CustomMaterial が使用不可なため、Core Image でフィルターを適用し処理済みテクスチャをマテリアルに渡す。
 
-- 視野狭窄：`CIVignetteEffect`
 - 色覚異常：`CIColorMatrix`（Brettel 1997 行列変換、3タイプ）
 - 白内障：`CIGaussianBlur` + Bloom（輝度抽出 → ブラー → 加算合成）+ 黄変
-- 網膜色素変性症：`CIRadialGradient` + `CIBlendWithMask`
 - 老眼：`CIGaussianBlur` + コントラスト調整
 - 乱視：`CIMotionBlur`（30度方向）+ 輝度マスク
 
-中心暗点・飛蚊症は**ヘッドトラッキング連動（実装済み）**：
-- CI フィルター方式（毎フレームのテクスチャ再生成）ではなく **RealityKit Entity オーバーレイ方式**で実装
+### RealityKit Entity オーバーレイ方式（4症状）
+
+CI フィルター方式（毎フレームのテクスチャ再生成）では 60fps のリアルタイム追従が不可能なため、
+視野狭窄・網膜色素変性症・中心暗点・飛蚊症の4症状に採用。
+
 - ARKit `WorldTrackingProvider.queryDeviceAnchor` でヘッドの向きを 60fps で取得
-- 暗点/飛蚊 Entity をヘッド前方 `overlayDistance=1.5m` に配置し毎フレーム `position` を更新
-- **スムージング**：中心暗点は α=0.15、飛蚊症は α=0.04（硝子体の慣性感）で lerp
+- 6m×6m の平面 Entity をヘッド前方 `overlayDistance=1.5m` に配置し毎フレーム `position` を更新
+- **向き設定は `entity.orientation = headOrientation`（`look(at:)` は平面が傾くためNG）**
+- **テクスチャ生成：`CGContext.clear()` で初期化後に `drawRadialGradient`（`fill()` では透明にならない）**
+- **スムージング**：視野狭窄・網膜色素変性症・中心暗点は α=0.15、飛蚊症は α=0.04（硝子体の慣性感）で lerp
+- **板サイズ 6m×6m 固定**：intensity 変化時はスケール変更ではなくテクスチャを差し替える（スケール変更では透明穴と板が同比率で変化するため視野角が変わらない）
 - **飛蚊症オフセット**：`FloaterOffsetComponent` で各球体の水平・垂直オフセットを保持し `right/up` ベクトルで分散配置
 
 ---
@@ -149,25 +153,27 @@ ThroughMySpace/
 - [x] フェーズ1：PHPickerViewController + PHAssetResourceManager で完全 HEIC 取得
 - [x] フェーズ1：ドームメッシュ展開・Full Immersion Space 表示
 - [x] フェーズ1：フローティングパネルUI
-- [x] フェーズ1：視野狭窄・色覚異常・白内障・網膜色素変性症・老眼・乱視
+- [x] フェーズ1：色覚異常・白内障・老眼・乱視（Core Image フィルター方式）
 - [x] フェーズ1：症状説明 InfoView、体験開始免責事項 EntryNoticeView
 - [x] フェーズ1：日英ローカライゼーション
 - [x] フェーズ2：中心暗点（ヘッドトラッキング連動・Entity オーバーレイ方式）
 - [x] フェーズ2：飛蚊症（ヘッドトラッキング連動・Entity オーバーレイ方式）
+- [x] フェーズ2：視野狭窄（ヘッドトラッキング連動・Entity オーバーレイ方式に移行）
+- [x] フェーズ2：網膜色素変性症（ヘッドトラッキング連動・Entity オーバーレイ方式に移行）
 - [x] フェーズ2：App Store 申請（審査提出済み・審査待ち）
 
 ### 実装済み症状一覧
 
 | 症状 | 状態 | 手法 |
 |---|---|---|
-| 視野狭窄（緑内障） | ✅ 実装済み | CIVignetteEffect |
+| 視野狭窄（緑内障） | ✅ 実装済み | ARKit ヘッドトラッキング + Entity オーバーレイ（外周暗化・α=0.15） |
 | 色覚異常 | ✅ 実装済み | Brettel 1997 行列変換（3タイプ） |
 | 白内障 | ✅ 実装済み | CIGaussianBlur + Bloom + 黄変 |
-| 網膜色素変性症 | ✅ 実装済み | CIRadialGradient + CIBlendWithMask |
+| 網膜色素変性症 | ✅ 実装済み | ARKit ヘッドトラッキング + Entity オーバーレイ（外周黒・中心透明・α=0.15） |
 | 老眼 | ✅ 実装済み | CIGaussianBlur + コントラスト調整 |
 | 乱視 | ✅ 実装済み | CIMotionBlur（30度）+ 輝度マスク |
-| 中心暗点 | ✅ 実装済み | ヘッドトラッキング + Entity オーバーレイ（スムージング α=0.15） |
-| 飛蚊症 | ✅ 実装済み | ヘッドトラッキング + Entity オーバーレイ（遅延追従 α=0.04） |
+| 中心暗点 | ✅ 実装済み | ARKit ヘッドトラッキング + Entity オーバーレイ（中心暗点・α=0.15） |
+| 飛蚊症 | ✅ 実装済み | ARKit ヘッドトラッキング + Entity オーバーレイ（遅延追従 α=0.04） |
 
 ---
 

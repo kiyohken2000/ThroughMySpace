@@ -86,6 +86,12 @@ struct ImmersiveView: View {
     /// 現在表示中の飛蚊症タイプのEntityリスト（更新の便利のため）
     @State private var floaterEntities: [ModelEntity] = []
 
+    /// 視野狭窄オーバーレイ（外周が暗くなるビネット形状）
+    @State private var visualFieldEntity: ModelEntity? = nil
+
+    /// 網膜色素変性症オーバーレイ（外周が真っ黒になるドーナツ形状）
+    @State private var retinitisEntity: ModelEntity? = nil
+
     /// ドームの半径（makeContentと同じ値）
     private let domeRadius: Float = 3.0
 
@@ -111,6 +117,20 @@ struct ImmersiveView: View {
                                 textures: appModel.selectedStereoTextures,
                                 setting: appModel.conditionSetting)
 
+            // MARK: 視野狭窄オーバーレイ Entity（初期は非表示）
+            // makeVisualFieldEntity() は板メッシュのみ生成。
+            // テクスチャは isEnabled になるタイミングで updateVisualFieldTexture() が呼ばれる。
+            let visualField = makeVisualFieldEntity()
+            visualField.isEnabled = false
+            content.add(visualField)
+            visualFieldEntity = visualField
+
+            // MARK: 網膜色素変性症オーバーレイ Entity（初期は非表示）
+            let retinitis = makeRetinitisEntity()
+            retinitis.isEnabled = false
+            content.add(retinitis)
+            retinitisEntity = retinitis
+
             // MARK: 中心暗点オーバーレイ Entity（初期は非表示）
             let scotoma = makeScotomaEntity()
             scotoma.isEnabled = false
@@ -129,7 +149,7 @@ struct ImmersiveView: View {
             // MARK: フローティングパネルを 3D 空間に配置
             // 少し上（y=0.6）・正面方向（z=-1.2）に浮かせる
             if let panelEntity = attachments.entity(for: panelAttachmentID) {
-                panelEntity.position = SIMD3<Float>(0, 0.6, -1.2)
+                panelEntity.position = SIMD3<Float>(0, 0.6, -0.8)
                 content.add(panelEntity)
 
                 // MARK: 症状説明（InfoView）をパネルの子として配置
@@ -202,10 +222,35 @@ struct ImmersiveView: View {
         // 症状設定が変わったとき：保存済み CGImage にフィルターをかけ直す
         .onChange(of: appModel.conditionSetting) { oldSetting, newSetting in
             // ──────────────────────────────────────────────
-            // Entity オーバーレイ（中心暗点・飛蚊症）の表示切り替え
+            // Entity オーバーレイ（視野狭窄・網膜色素変性症・中心暗点・飛蚊症）の表示切り替え
             // ──────────────────────────────────────────────
-            let isScotoma   = (newSetting.type == .scotoma)
-            let isFloaters  = (newSetting.type == .floaters)
+            let isVisualField  = (newSetting.type == .visualField)
+            let isRetinitis    = (newSetting.type == .retinitispigmentosa)
+            let isScotoma      = (newSetting.type == .scotoma)
+            let isFloaters     = (newSetting.type == .floaters)
+
+            // 視野狭窄：表示/非表示 + intensity に応じてテクスチャを更新
+            //
+            // 【なぜ scale ではなくテクスチャ差し替えか】
+            // 板サイズは「視野全体をカバーするほど大きく（6m）」固定する必要がある。
+            // scale を変えると板も縮んで周辺が覆われなくなるため。
+            // intensity に応じてテクスチャの「透明円の大きさ」を変えて差し替える。
+            if let visualField = visualFieldEntity {
+                visualField.isEnabled = isVisualField
+                if isVisualField {
+                    updateVisualFieldTexture(entity: visualField,
+                                            intensity: newSetting.intensity.value)
+                }
+            }
+
+            // 網膜色素変性症：表示/非表示 + intensity に応じてテクスチャを更新
+            if let retinitis = retinitisEntity {
+                retinitis.isEnabled = isRetinitis
+                if isRetinitis {
+                    updateRetinitisTexture(entity: retinitis,
+                                          intensity: newSetting.intensity.value)
+                }
+            }
 
             // 中心暗点：表示/非表示 + intensity に応じたスケール更新
             // ベースサイズ 0.6m（overlayDistance=1.5m 基準）
@@ -239,7 +284,9 @@ struct ImmersiveView: View {
                 floaterEntities = []
             }
 
-            // ドームの CI フィルター再適用（中心暗点・飛蚊症はドームに何もしない）
+            // ドームの CI フィルター再適用
+            // Entity オーバーレイ方式の症状（視野狭窄・網膜色素変性症・中心暗点・飛蚊症）は
+            // ドームには何もしない（元画像をそのまま表示）
             guard let dome = domeEntity else { return }
             // 前のタスクをキャンセル（スライダー連打対策）
             filterTask?.cancel()
@@ -354,8 +401,9 @@ struct ImmersiveView: View {
             filteredRight = rightCI
 
         case .visualField:
-            filteredLeft  = applyVignetteFilter(to: leftCI,  intensity: setting.intensity.value)
-            filteredRight = applyVignetteFilter(to: rightCI, intensity: setting.intensity.value)
+            // Entity オーバーレイ方式で実装するため、ドームには何もしない
+            filteredLeft  = leftCI
+            filteredRight = rightCI
 
         case .colorBlind:
             filteredLeft  = applyColorBlindFilter(to: leftCI,  type: setting.colorBlindType, intensity: setting.intensity.value)
@@ -366,8 +414,9 @@ struct ImmersiveView: View {
             filteredRight = applyCataractFilter(to: rightCI, intensity: setting.intensity.value)
 
         case .retinitispigmentosa:
-            filteredLeft  = applyRetinitisFilter(to: leftCI,  intensity: setting.intensity.value)
-            filteredRight = applyRetinitisFilter(to: rightCI, intensity: setting.intensity.value)
+            // Entity オーバーレイ方式で実装するため、ドームには何もしない
+            filteredLeft  = leftCI
+            filteredRight = rightCI
 
         case .presbyopia:
             filteredLeft  = applyPresbyopiaFilter(to: leftCI,  intensity: setting.intensity.value)
@@ -961,6 +1010,39 @@ struct ImmersiveView: View {
                 let right = SIMD3<Float>(matrix.columns.0.x, matrix.columns.0.y, matrix.columns.0.z)
                 let up    = SIMD3<Float>(matrix.columns.1.x, matrix.columns.1.y, matrix.columns.1.z)
 
+                // ヘッドの向きをクォータニオンとして抽出する
+                //
+                // 【look(at:) ではなくクォータニオン直接設定にする理由】
+                // look(at: headPos, from: vfPos) は平面を headPos 方向に傾ける。
+                // 視野狭窄・網膜色素変性症は「視野全体を覆う大きな板」なので、
+                // 傾くとテクスチャの中心（透明部分）が視覚的中心からズレて見える。
+                // ヘッドの回転行列からクォータニオンを取り出して直接 orientation に
+                // セットすることで、板が常にユーザーの顔と平行（正対）になる。
+                //
+                // simd_quatf(matrix:) は 3x3 回転行列からクォータニオンを生成する。
+                // columns.0〜2 が回転の各軸で、これが 3x3 上側左部分になる。
+                let rotMatrix = simd_float3x3(
+                    SIMD3<Float>(matrix.columns.0.x, matrix.columns.0.y, matrix.columns.0.z),
+                    SIMD3<Float>(matrix.columns.1.x, matrix.columns.1.y, matrix.columns.1.z),
+                    SIMD3<Float>(matrix.columns.2.x, matrix.columns.2.y, matrix.columns.2.z)
+                )
+                let headOrientation = simd_quatf(rotMatrix)
+
+                // 視野狭窄 Entity の位置・向き更新（中心暗点と同じスムージング α=0.15）
+                // ヘッドと正対させることでテクスチャ中心が常に視野中心に来る
+                if let visualField = visualFieldEntity, visualField.isEnabled {
+                    let vfPos = headPos + smoothedForward * overlayDistance
+                    visualField.position = vfPos
+                    visualField.orientation = headOrientation
+                }
+
+                // 網膜色素変性症 Entity の位置・向き更新
+                if let retinitis = retinitisEntity, retinitis.isEnabled {
+                    let rpPos = headPos + smoothedForward * overlayDistance
+                    retinitis.position = rpPos
+                    retinitis.orientation = headOrientation
+                }
+
                 // 中心暗点 Entity の位置更新
                 // ヘッド位置 + smoothedForward 方向の overlayDistance に配置してから
                 // look(at: headPos) でヘッド位置を向かせる（ビルボード的動作）
@@ -969,7 +1051,7 @@ struct ImmersiveView: View {
                 if let scotoma = scotomaEntity, scotoma.isEnabled {
                     let scotomaPos = headPos + smoothedForward * overlayDistance
                     scotoma.position = scotomaPos
-                    scotoma.look(at: headPos, from: scotomaPos, relativeTo: nil)
+                    scotoma.orientation = headOrientation
                 }
 
                 // 飛蚊症 Entity の位置更新（遅延追従）
@@ -1002,6 +1084,185 @@ struct ImmersiveView: View {
     struct FloaterOffsetComponent: Component {
         var horizontal: Float  // カメラ座標系での水平オフセット（メートル）
         var vertical: Float    // カメラ座標系での垂直オフセット（メートル）
+    }
+
+    // ------------------------------------------------------------------
+    // 視野狭窄テクスチャを intensity に応じて更新する
+    //
+    // 【透明円のサイズと intensity の関係】
+    // intensity=0（軽度）: 透明円が板全体の 80% → 視野広い
+    // intensity=1（重度）: 透明円が板全体の  8% → 視野狭窄
+    //
+    // 板サイズ（6m）は固定、テクスチャの透明穴の半径だけを変える。
+    // scale は常に 1.0 を維持（板が縮むと周辺が覆われなくなるため）。
+    // ------------------------------------------------------------------
+    @MainActor
+    private func updateVisualFieldTexture(entity: ModelEntity, intensity: Float) {
+        let size = 512
+        guard let ctx = CGContext(
+            data: nil, width: size, height: size,
+            bitsPerComponent: 8, bytesPerRow: size * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return }
+
+        // 【中心暗点と同じ描画方式】
+        // clear() でキャンバス全体を透明にしてからグラデーションを描く。
+        // 先に fill() で黒を塗ってからアルファ=0のグラデーションを重ねると、
+        // CGContext のデフォルトブレンドモード（.normal）では
+        // アルファ=0 の描画が下の黒を上書きせず透明にできないため。
+        ctx.clear(CGRect(x: 0, y: 0, width: size, height: size))
+
+        let center = CGPoint(x: size / 2, y: size / 2)
+        let maxRadius = CGFloat(size) / 2.0
+
+        // intensity=0 → 透明円の半径を maxRadius の 80% → 視野広い
+        // intensity=1 → 透明円の半径を maxRadius の  8% → 視野狭窄
+        let clearRadius = maxRadius * CGFloat(mix(0.80, 0.08, t: intensity))
+        // グラデーション幅：intensity が大きいほどシャープな境界
+        let fadeWidth   = maxRadius * CGFloat(mix(0.20, 0.04, t: intensity))
+
+        // 中心から clearRadius まで：透明（ドームが透けて見える）
+        // clearRadius 〜 outerRadius：黒にフェードするグラデーション
+        // outerRadius 以降：.drawsAfterEndLocation で黒不透明
+        let outerRadius = clearRadius + fadeWidth
+        let colors: [CGColor] = [
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.0),   // 中心：完全透明
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.0),   // 透明円の端まで透明
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.80),  // グラデーション中間
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.97),  // ほぼ黒
+        ]
+        let loc1: CGFloat = clearRadius / maxRadius
+        let loc2: CGFloat = (clearRadius + fadeWidth * 0.5) / maxRadius
+        let loc3: CGFloat = min(outerRadius / maxRadius, 1.0)
+        let locations: [CGFloat] = [0.0, loc1, loc2, loc3]
+
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                     colors: colors as CFArray, locations: locations) {
+            ctx.drawRadialGradient(
+                gradient,
+                startCenter: center, startRadius: 0,
+                endCenter: center, endRadius: maxRadius,
+                options: [.drawsAfterEndLocation]  // 外縁より外は黒で塗る
+            )
+        }
+
+        guard let cgImage = ctx.makeImage() else { return }
+        do {
+            let texture = try TextureResource(image: cgImage, withName: nil,
+                                              options: .init(semantic: .color))
+            var material = UnlitMaterial()
+            material.faceCulling = .none
+            material.color = .init(texture: .init(texture))
+            material.blending = .transparent(opacity: .init(floatLiteral: 1.0))
+            entity.model?.materials = [material]
+        } catch {
+            print("⚠️ 視野狭窄テクスチャ更新失敗: \(error)")
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 網膜色素変性症テクスチャを intensity に応じて更新する
+    //
+    // 視野狭窄よりシャープな境界（グラデーション幅が狭い）で
+    // 外周を真っ黒にする。トンネル視野を表現。
+    // ------------------------------------------------------------------
+    @MainActor
+    private func updateRetinitisTexture(entity: ModelEntity, intensity: Float) {
+        let size = 512
+        guard let ctx = CGContext(
+            data: nil, width: size, height: size,
+            bitsPerComponent: 8, bytesPerRow: size * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return }
+
+        // 視野狭窄と同じく clear() から始める
+        ctx.clear(CGRect(x: 0, y: 0, width: size, height: size))
+
+        let center = CGPoint(x: size / 2, y: size / 2)
+        let maxRadius = CGFloat(size) / 2.0
+
+        // intensity=0 → 透明円の半径を 75%（広い視野）
+        // intensity=1 → 透明円の半径を  6%（重度のトンネル視野）
+        let clearRadius = maxRadius * CGFloat(mix(0.75, 0.06, t: intensity))
+        // 視野狭窄より狭いグラデーション幅（「壁」的な境界）
+        let fadeWidth   = maxRadius * CGFloat(mix(0.12, 0.03, t: intensity))
+
+        let colors: [CGColor] = [
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.0),   // 中心：完全透明
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.0),   // 透明円の端まで透明
+            CGColor(red: 0, green: 0, blue: 0, alpha: 0.60),  // 急峻なグラデーション
+            CGColor(red: 0, green: 0, blue: 0, alpha: 1.0),   // 完全な黒
+        ]
+        let outerRadius = clearRadius + fadeWidth
+        let r0 = clearRadius
+        let loc0: CGFloat = 0.0
+        let loc1: CGFloat = r0 / maxRadius
+        let loc2: CGFloat = (r0 + fadeWidth * 0.4) / maxRadius
+        let loc3: CGFloat = min(outerRadius / maxRadius, 1.0)
+        let locations: [CGFloat] = [loc0, loc1, loc2, loc3]
+
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                     colors: colors as CFArray, locations: locations) {
+            ctx.drawRadialGradient(
+                gradient,
+                startCenter: center, startRadius: 0,
+                endCenter: center, endRadius: maxRadius,
+                options: [.drawsAfterEndLocation]
+            )
+        }
+
+        guard let cgImage = ctx.makeImage() else { return }
+        do {
+            let texture = try TextureResource(image: cgImage, withName: nil,
+                                              options: .init(semantic: .color))
+            var material = UnlitMaterial()
+            material.faceCulling = .none
+            material.color = .init(texture: .init(texture))
+            material.blending = .transparent(opacity: .init(floatLiteral: 1.0))
+            entity.model?.materials = [material]
+        } catch {
+            print("⚠️ 網膜色素変性症テクスチャ更新失敗: \(error)")
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 視野狭窄 Entity を生成する（メッシュのみ。テクスチャは updateVisualFieldTexture で適用）
+    //
+    // 【板サイズが 6m×6m と大きい理由】
+    // 視野狭窄は「外周を黒で覆い、中心だけ透明（見える）」構造。
+    // 板が小さいと外側の周辺視野が覆われずドーム背景が見えてしまう。
+    // overlayDistance=1.5m で ±60度をカバーするには約 5.2m 必要 → 6m に設定。
+    //
+    // テクスチャは intensity が変わるたびに updateVisualFieldTexture() で差し替える。
+    // ------------------------------------------------------------------
+    @MainActor
+    private func makeVisualFieldEntity() -> ModelEntity {
+        let mesh = MeshResource.generatePlane(width: 6.0, height: 6.0)
+        var material = UnlitMaterial()
+        material.faceCulling = .none
+        // 初期は黒（isEnabled=false なので見えない）
+        material.color = .init(tint: .black)
+        material.blending = .transparent(opacity: .init(floatLiteral: 1.0))
+        let entity = ModelEntity(mesh: mesh, materials: [material])
+        entity.name = "VisualFieldOverlay"
+        return entity
+    }
+
+    // ------------------------------------------------------------------
+    // 網膜色素変性症 Entity を生成する（メッシュのみ。テクスチャは updateRetinitisTexture で適用）
+    // ------------------------------------------------------------------
+    @MainActor
+    private func makeRetinitisEntity() -> ModelEntity {
+        let mesh = MeshResource.generatePlane(width: 6.0, height: 6.0)
+        var material = UnlitMaterial()
+        material.faceCulling = .none
+        material.color = .init(tint: .black)
+        material.blending = .transparent(opacity: .init(floatLiteral: 1.0))
+        let entity = ModelEntity(mesh: mesh, materials: [material])
+        entity.name = "RetinitisOverlay"
+        return entity
     }
 
     // ------------------------------------------------------------------

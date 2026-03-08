@@ -71,36 +71,40 @@ Core Image でフィルターを適用し TextureResource として渡せる。
 | 空間表示 | RealityKit / Full Immersion Space |
 | 左右目テクスチャ切り替え | ShaderGraph（CameraIndexSwitch ノード） |
 | 空間写真の読み込み | PHPickerViewController + PHAssetResourceManager |
-| 視覚フィルター | Core Image（CPU処理） |
+| 視覚フィルター（CI方式） | Core Image（CPU処理）— 色覚異常・白内障・老眼・乱視 |
+| 視覚フィルター（Entity方式） | RealityKit ModelEntity + ARKit WorldTrackingProvider — 視野狭窄・網膜色素変性症・中心暗点・飛蚊症 |
 | ドームメッシュ | RealityKit MeshResource（カスタム生成） |
 
 ---
 
 ## 対応する視覚症状
 
-### 実装済み
+### Core Image フィルター方式（4症状）
 
 | 症状 | 手法 |
 |---|---|
-| 視野狭窄（緑内障） | CIVignetteEffect |
 | 色覚異常（3タイプ） | Brettel 1997 行列変換（CIColorMatrix） |
 | 白内障 | CIGaussianBlur + Bloom（輝度抽出→ブラー→加算）+ 黄変 |
-| 網膜色素変性症 | CIRadialGradient + CIBlendWithMask |
 | 老眼 | CIGaussianBlur + コントラスト調整 |
 | 乱視 | CIMotionBlur（30度）+ 輝度マスク |
 
-### フェーズ2実装済み
+### Entity オーバーレイ方式（4症状）
 
-**中心暗点（加齢黄斑変性）**
-- ARKit `WorldTrackingProvider.queryDeviceAnchor` でヘッドの向きを 60fps で取得
-- CI フィルター方式ではなく RealityKit Entity オーバーレイ方式を採用（毎フレームのテクスチャ再生成が不要）
-- 中心が黒不透明・外縁が透明のグラデーション平面 Entity をヘッド前方 1.5m に配置
-- スムージング α=0.15 で視線の微振動を吸収
+ARKit `WorldTrackingProvider.queryDeviceAnchor` でヘッドの向きを 60fps で取得し、
+RealityKit Entity をヘッド前方 1.5m に配置してリアルタイム追従させる方式。
+CI フィルター方式（毎フレームのテクスチャ再生成）では 60fps での追従が不可能なためこの方式を採用。
 
-**飛蚊症**
-- 同じく Entity オーバーレイ方式
-- 7個の半透明球体 Entity を `FloaterOffsetComponent`（水平・垂直オフセット）で分散配置
-- スムージング α=0.04（約0.5秒の遅延追従）で硝子体の慣性感を再現
+**共通実装ルール：**
+- Entity サイズ：6m×6m の平面（overlayDistance=1.5m で ±60度をカバー）
+- 向き設定：`entity.orientation = headOrientation`（`look(at:)` は平面が傾くためNG）
+- `CGContext.clear()` で初期化後に `drawRadialGradient`（`fill()` では透明にならない）
+
+| 症状 | テクスチャ構造 | スムージング |
+|---|---|---|
+| 視野狭窄（緑内障） | 中心透明・外周ほど黒アルファが上がるグラデーション | α=0.15 |
+| 網膜色素変性症 | 中心だけ透明（小さい円）・外周は黒 | α=0.15 |
+| 中心暗点（加齢黄斑変性） | 中心が黒不透明・外縁が透明のグラデーション | α=0.15 |
+| 飛蚊症 | 7個の半透明球体 Entity を `FloaterOffsetComponent` で分散配置 | α=0.04（硝子体の慣性感） |
 
 ---
 
@@ -202,16 +206,18 @@ CGImage（元画像）
 - [x] ドームメッシュ展開・Full Immersion Space 表示
 - [x] ShaderGraph CameraIndexSwitch による左右テクスチャ切り替え（立体感の保持）
 - [x] フローティングパネルUI
-- [x] 視野狭窄・色覚異常・白内障・網膜色素変性症・老眼・乱視
+- [x] 色覚異常・白内障・老眼・乱視（Core Image フィルター方式）
 - [x] 症状説明 InfoView・体験開始免責事項 EntryNoticeView
 - [x] 日英ローカライゼーション
 
-### フェーズ2（状況）
+### フェーズ2（完了）
 
 - [x] 中心暗点（ヘッドトラッキング連動・Entity オーバーレイ方式）
 - [x] 飛蚊症（ヘッドトラッキング連動・Entity オーバーレイ方式）
+- [x] 視野狭窄（ヘッドトラッキング連動・Entity オーバーレイ方式に移行）
+- [x] 網膜色素変性症（ヘッドトラッキング連動・Entity オーバーレイ方式に移行）
+- [x] App Store 申請（審査提出済み）
 - [ ] 症状の重ねがけモード（複数症状の同時適用）
-- [ ] App Store 申請
 
 ---
 

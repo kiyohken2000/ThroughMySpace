@@ -30,14 +30,14 @@
 
 | 症状 | 手法 | 状態 |
 |---|---|---|
-| 視野狭窄（緑内障） | CIVignetteEffect | ✅ 実装済み |
-| 色覚異常（3タイプ） | Brettel 1997 行列変換 | ✅ 実装済み |
+| 視野狭窄（緑内障） | Entity オーバーレイ（ARKit ヘッドトラッキング連動） | ✅ 実装済み |
+| 色覚異常（3タイプ） | Brettel 1997 行列変換（CIColorMatrix） | ✅ 実装済み |
 | 白内障 | CIGaussianBlur + Bloom + 黄変 | ✅ 実装済み |
-| 網膜色素変性症 | CIRadialGradient + CIBlendWithMask | ✅ 実装済み |
+| 網膜色素変性症 | Entity オーバーレイ（ARKit ヘッドトラッキング連動） | ✅ 実装済み |
 | 老眼 | CIGaussianBlur + コントラスト調整 | ✅ 実装済み |
 | 乱視 | CIMotionBlur（30度）+ 輝度マスク | ✅ 実装済み |
-| 中心暗点 | アイトラッキング連動 | 🔜 実装予定 |
-| 飛蚊症 | アイトラッキング連動 | 🔜 実装予定 |
+| 中心暗点 | Entity オーバーレイ（ARKit ヘッドトラッキング連動） | ✅ 実装済み |
+| 飛蚊症 | Entity オーバーレイ（ARKit ヘッドトラッキング連動） | ✅ 実装済み |
 
 ---
 
@@ -56,6 +56,7 @@
 - **SwiftUI** — UI
 - **RealityKit + ShaderGraph** — ドームメッシュ・左右テクスチャ切り替え（CameraIndexSwitch）
 - **Core Image** — 視覚フィルター（症状ごとの画像処理）
+- **ARKit（WorldTrackingProvider）** — ヘッドトラッキング（Entity オーバーレイ方式の4症状）
 - **PhotosUI + PHAssetResourceManager** — 空間写真の完全HEICデータ取得
 
 ### フィルターパイプライン
